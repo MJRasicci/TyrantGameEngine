@@ -1,0 +1,72 @@
+PROJECT_NAME           = "Tyrant Game Engine"
+PROJECT_NUMBER         = @TGE_VERSION_MAJOR@.@TGE_VERSION_MINOR@.@TGE_VERSION_PATCH@
+PROJECT_BRIEF          = "Absolute Control. Minimal Effort."
+PROJECT_LOGO           = @PROJECT_SOURCE_DIR@/Docs/Resources/Logo.png
+OUTPUT_DIRECTORY       = @DOXYGEN_OUTPUT_DIR@
+CREATE_SUBDIRS         = YES
+TOC_INCLUDE_HEADINGS   = 5
+BUILTIN_STL_SUPPORT    = YES
+EXTRACT_ALL            = YES
+INPUT                  = @PROJECT_SOURCE_DIR@/Editor \
+                         @PROJECT_SOURCE_DIR@/Runtime \
+                         @PROJECT_SOURCE_DIR@/Docs/Pages
+FILE_PATTERNS          = *.c \
+                         *.cc \
+                         *.cxx \
+                         *.cxxm \
+                         *.cpp \
+                         *.cppm \
+                         *.c++ \
+                         *.c++m \
+                         *.java \
+                         *.ii \
+                         *.ixx \
+                         *.ipp \
+                         *.i++ \
+                         *.inl \
+                         *.idl \
+                         *.ddl \
+                         *.odl \
+                         *.h \
+                         *.hh \
+                         *.hxx \
+                         *.hpp \
+                         *.h++ \
+                         *.ixx \
+                         *.l \
+                         *.cs \
+                         *.d \
+                         *.php \
+                         *.php4 \
+                         *.php5 \
+                         *.phtml \
+                         *.inc \
+                         *.m \
+                         *.markdown \
+                         *.md \
+                         *.mm \
+                         *.dox \
+                         *.py \
+                         *.pyw \
+                         *.f90 \
+                         *.f95 \
+                         *.f03 \
+                         *.f08 \
+                         *.f18 \
+                         *.f \
+                         *.for \
+                         *.vhd \
+                         *.vhdl \
+                         *.ucf \
+                         *.qsf \
+                         *.ice
+RECURSIVE              = YES
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = YES
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+HTML_EXTRA_STYLESHEET  = @PROJECT_SOURCE_DIR@/Docs/Styles/doxygen_html_styles.css
+GENERATE_LATEX         = NO
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+PREDEFINED             = TGE_API=

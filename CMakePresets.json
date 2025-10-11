@@ -1,0 +1,332 @@
+{
+    "version": 10,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 31,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "generic-base",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/artifacts/build/${presetName}",
+            "installDir": "${sourceDir}/artifacts/install/${presetName}",
+            "cacheVariables": {
+                "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/artifacts/bin/${presetName}",
+                "CMAKE_LIBRARY_OUTPUT_DIRECTORY": "${sourceDir}/artifacts/lib/${presetName}",
+                "CMAKE_ARCHIVE_OUTPUT_DIRECTORY": "${sourceDir}/artifacts/lib/${presetName}",
+                "DOXYGEN_OUTPUT_DIR": "${sourceDir}/artifacts/docs",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
+            "name": "windows-base",
+            "inherits": "generic-base",
+            "hidden": true,
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            },
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_CXX_COMPILER": "cl.exe"
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioSettings/CMake/1.0": {
+                    "hostOS": [
+                        "Windows"
+                    ]
+                }
+            }
+        },
+        {
+            "name": "macos-base",
+            "inherits": "generic-base",
+            "hidden": true,
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioSettings/CMake/1.0": {
+                    "hostOS": [
+                        "macOS"
+                    ]
+                }
+            }
+        },
+        {
+            "name": "linux-base",
+            "inherits": "generic-base",
+            "hidden": true,
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            },
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "gcc",
+                "CMAKE_CXX_COMPILER": "g++"
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioSettings/CMake/1.0": {
+                    "hostOS": [
+                        "Linux"
+                    ]
+                }
+            }
+        },
+        {
+            "name": "x64-base",
+            "hidden": true,
+            "architecture": {
+                "value": "x64",
+                "strategy": "external"
+            }
+        },
+        {
+            "name": "arm64-base",
+            "hidden": true,
+            "architecture": {
+                "value": "arm64",
+                "strategy": "external"
+            }
+        },
+        {
+            "name": "debug-base",
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "release-base",
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON"
+            }
+        },
+        { "name": "windows-x64-debug",     "displayName": "Windows x64 Debug",     "inherits": [ "windows-base", "x64-base",   "debug-base"   ] },
+        { "name": "windows-x64-release",   "displayName": "Windows x64 Release",   "inherits": [ "windows-base", "x64-base",   "release-base" ] },
+        { "name": "windows-arm64-debug",   "displayName": "Windows ARM64 Debug",   "inherits": [ "windows-base", "arm64-base", "debug-base"   ] },
+        { "name": "windows-arm64-release", "displayName": "Windows ARM64 Release", "inherits": [ "windows-base", "arm64-base", "release-base" ] },
+        { "name": "macos-x64-debug",       "displayName": "macOS x64 Debug",       "inherits": [ "macos-base",   "x64-base",   "debug-base"   ] },
+        { "name": "macos-x64-release",     "displayName": "macOS x64 Release",     "inherits": [ "macos-base",   "x64-base",   "release-base" ] },
+        { "name": "macos-arm64-debug",     "displayName": "macOS ARM64 Debug",     "inherits": [ "macos-base",   "arm64-base", "debug-base"   ] },
+        { "name": "macos-arm64-release",   "displayName": "macOS ARM64 Release",   "inherits": [ "macos-base",   "arm64-base", "release-base" ] },
+        { "name": "linux-x64-debug",       "displayName": "Linux x64 Debug",       "inherits": [ "linux-base",   "x64-base",   "debug-base"   ] },
+        { "name": "linux-x64-release",     "displayName": "Linux x64 Release",     "inherits": [ "linux-base",   "x64-base",   "release-base" ] },
+        { "name": "linux-arm64-debug",     "displayName": "Linux ARM64 Debug",     "inherits": [ "linux-base",   "arm64-base", "debug-base"   ] },
+        { "name": "linux-arm64-release",   "displayName": "Linux ARM64 Release",   "inherits": [ "linux-base",   "arm64-base", "release-base" ] }
+    ],
+    "buildPresets": [
+        { "name": "windows-x64-debug",     "displayName": "Windows x64 Debug",     "configurePreset": "windows-x64-debug"     },
+        { "name": "windows-x64-release",   "displayName": "Windows x64 Release",   "configurePreset": "windows-x64-release"   },
+        { "name": "windows-arm64-debug",   "displayName": "Windows ARM64 Debug",   "configurePreset": "windows-arm64-debug"   },
+        { "name": "windows-arm64-release", "displayName": "Windows ARM64 Release", "configurePreset": "windows-arm64-release" },
+        { "name": "macos-x64-debug",       "displayName": "macOS x64 Debug",       "configurePreset": "macos-x64-debug"       },
+        { "name": "macos-x64-release",     "displayName": "macOS x64 Release",     "configurePreset": "macos-x64-release"     },
+        { "name": "macos-arm64-debug",     "displayName": "macOS ARM64 Debug",     "configurePreset": "macos-arm64-debug"     },
+        { "name": "macos-arm64-release",   "displayName": "macOS ARM64 Release",   "configurePreset": "macos-arm64-release"   },
+        { "name": "linux-x64-debug",       "displayName": "Linux x64 Debug",       "configurePreset": "linux-x64-debug"       },
+        { "name": "linux-x64-release",     "displayName": "Linux x64 Release",     "configurePreset": "linux-x64-release"     },
+        { "name": "linux-arm64-debug",     "displayName": "Linux ARM64 Debug",     "configurePreset": "linux-arm64-debug"     },
+        { "name": "linux-arm64-release",   "displayName": "Linux ARM64 Release",   "configurePreset": "linux-arm64-release"   }
+    ],
+    "testPresets": [
+        {
+            "name": "generic-base",
+            "hidden": true,
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "ignore",
+                "stopOnFailure": true
+            }
+        },
+        {
+            "name": "windows-base",
+            "hidden": true,
+            "inherits": "generic-base"
+        },
+        {
+            "name": "macos-base",
+            "hidden": true,
+            "inherits": "generic-base"
+        },
+        {
+            "name": "linux-base",
+            "hidden": true,
+            "inherits": "generic-base"
+        },
+        { "name": "windows-x64-debug",     "displayName": "Windows x64 Debug",     "configurePreset": "windows-x64-debug",     "inherits": "windows-base" },
+        { "name": "windows-x64-release",   "displayName": "Windows x64 Release",   "configurePreset": "windows-x64-release",   "inherits": "windows-base" },
+        { "name": "windows-arm64-debug",   "displayName": "Windows ARM64 Debug",   "configurePreset": "windows-arm64-debug",   "inherits": "windows-base" },
+        { "name": "windows-arm64-release", "displayName": "Windows ARM64 Release", "configurePreset": "windows-arm64-release", "inherits": "windows-base" },
+        { "name": "macos-x64-debug",       "displayName": "macOS x64 Debug",       "configurePreset": "macos-x64-debug",       "inherits": "macos-base"   },
+        { "name": "macos-x64-release",     "displayName": "macOS x64 Release",     "configurePreset": "macos-x64-release",     "inherits": "macos-base"   },
+        { "name": "macos-arm64-debug",     "displayName": "macOS ARM64 Debug",     "configurePreset": "macos-arm64-debug",     "inherits": "macos-base"   },
+        { "name": "macos-arm64-release",   "displayName": "macOS ARM64 Release",   "configurePreset": "macos-arm64-release",   "inherits": "macos-base"   },
+        { "name": "linux-x64-debug",       "displayName": "Linux x64 Debug",       "configurePreset": "linux-x64-debug",       "inherits": "linux-base"   },
+        { "name": "linux-x64-release",     "displayName": "Linux x64 Release",     "configurePreset": "linux-x64-release",     "inherits": "linux-base"   },
+        { "name": "linux-arm64-debug",     "displayName": "Linux ARM64 Debug",     "configurePreset": "linux-arm64-debug",     "inherits": "linux-base"   },
+        { "name": "linux-arm64-release",   "displayName": "Linux ARM64 Release",   "configurePreset": "linux-arm64-release",   "inherits": "linux-base"   }
+    ],
+    "packagePresets": [
+        {
+            "name": "generic-base",
+            "hidden": true,
+            "packageName": "TyrantGameEngine",
+            "packageDirectory": "${sourceDir}/artifacts/package"
+        },
+        {
+            "name": "windows-base",
+            "hidden": true,
+            "inherits": "generic-base",
+            "generators": [ "ZIP" ]
+        },
+        {
+            "name": "macos-base",
+            "hidden": true,
+            "inherits": "generic-base",
+            "generators": [ "DragNDrop" ]
+        },
+        {
+            "name": "linux-base",
+            "hidden": true,
+            "inherits": "generic-base",
+            "generators": [ "TGZ" ]
+        },
+        { "name": "windows-x64-release",   "displayName": "Windows x64 Release",   "configurePreset": "windows-x64-release",   "inherits": "windows-base" },
+        { "name": "windows-arm64-release", "displayName": "Windows ARM64 Release", "configurePreset": "windows-arm64-release", "inherits": "windows-base" },
+        { "name": "macos-x64-release",     "displayName": "macOS x64 Release",     "configurePreset": "macos-x64-release",     "inherits": "macos-base"   },
+        { "name": "macos-arm64-release",   "displayName": "macOS ARM64 Release",   "configurePreset": "macos-arm64-release",   "inherits": "macos-base"   },
+        { "name": "linux-x64-release",     "displayName": "Linux x64 Release",     "configurePreset": "linux-x64-release",     "inherits": "linux-base"   },
+        { "name": "linux-arm64-release",   "displayName": "Linux ARM64 Release",   "configurePreset": "linux-arm64-release",   "inherits": "linux-base"   }
+    ],
+    "workflowPresets": [
+        {
+            "name": "windows-x64-debug",
+            "displayName": "Windows x64 Debug",
+            "steps": [
+                { "type": "configure",  "name": "windows-x64-debug" },
+                { "type": "build",      "name": "windows-x64-debug" },
+                { "type": "test",       "name": "windows-x64-debug" }
+            ]
+        },
+        {
+            "name": "windows-x64-release",
+            "displayName": "Windows x64 Release",
+            "steps": [
+                { "type": "configure",  "name": "windows-x64-release" },
+                { "type": "build",      "name": "windows-x64-release" },
+                { "type": "test",       "name": "windows-x64-release" },
+                { "type": "package",    "name": "windows-x64-release" }
+            ]
+        },
+        {
+            "name": "windows-arm64-debug",
+            "displayName": "Windows ARM64 Debug",
+            "steps": [
+                { "type": "configure",  "name": "windows-arm64-debug" },
+                { "type": "build",      "name": "windows-arm64-debug" },
+                { "type": "test",       "name": "windows-arm64-debug" }
+            ]
+        },
+        {
+            "name": "windows-arm64-release",
+            "displayName": "Windows ARM64 Release",
+            "steps": [
+                { "type": "configure",  "name": "windows-arm64-release" },
+                { "type": "build",      "name": "windows-arm64-release" },
+                { "type": "test",       "name": "windows-arm64-release" },
+                { "type": "package",    "name": "windows-arm64-release" }
+            ]
+        },
+        {
+            "name": "macos-x64-debug",
+            "displayName": "macOS x64 debug",
+            "steps": [
+                { "type": "configure",  "name": "macos-x64-debug" },
+                { "type": "build",      "name": "macos-x64-debug" },
+                { "type": "test",       "name": "macos-x64-debug" }
+            ]
+        },
+        {
+            "name": "macos-x64-release",
+            "displayName": "macOS x64 Release",
+            "steps": [
+                { "type": "configure",  "name": "macos-x64-release" },
+                { "type": "build",      "name": "macos-x64-release" },
+                { "type": "test",       "name": "macos-x64-release" },
+                { "type": "package",    "name": "macos-x64-release" }
+            ]
+        },
+        {
+            "name": "macos-arm64-debug",
+            "displayName": "macOS ARM64 Debug",
+            "steps": [
+                { "type": "configure",  "name": "macos-arm64-debug" },
+                { "type": "build",      "name": "macos-arm64-debug" },
+                { "type": "test",       "name": "macos-arm64-debug" }
+            ]
+        },
+        {
+            "name": "macos-arm64-release",
+            "displayName": "macOS ARM64 Release",
+            "steps": [
+                { "type": "configure",  "name": "macos-arm64-release" },
+                { "type": "build",      "name": "macos-arm64-release" },
+                { "type": "test",       "name": "macos-arm64-release" },
+                { "type": "package",    "name": "macos-arm64-release" }
+            ]
+        },
+        {
+            "name": "linux-x64-debug",
+            "displayName": "Linux x64 Debug",
+            "steps": [
+                { "type": "configure",  "name": "linux-x64-debug" },
+                { "type": "build",      "name": "linux-x64-debug" },
+                { "type": "test",       "name": "linux-x64-debug" }
+            ]
+        },
+        {
+            "name": "linux-x64-release",
+            "displayName": "Linux x64 Release",
+            "steps": [
+                { "type": "configure",  "name": "linux-x64-release" },
+                { "type": "build",      "name": "linux-x64-release" },
+                { "type": "test",       "name": "linux-x64-release" },
+                { "type": "package",    "name": "linux-x64-release" }
+            ]
+        },
+        {
+            "name": "linux-arm64-debug",
+            "displayName": "Linux ARM64 Debug",
+            "steps": [
+                { "type": "configure",  "name": "linux-arm64-debug" },
+                { "type": "build",      "name": "linux-arm64-debug" },
+                { "type": "test",       "name": "linux-arm64-debug" }
+            ]
+        },
+        {
+            "name": "linux-arm64-release",
+            "displayName": "Linux ARM64 Release",
+            "steps": [
+                { "type": "configure",  "name": "linux-arm64-release" },
+                { "type": "build",      "name": "linux-arm64-release" },
+                { "type": "test",       "name": "linux-arm64-release" },
+                { "type": "package",    "name": "linux-arm64-release" }
+            ]
+        }
+    ]
+}
