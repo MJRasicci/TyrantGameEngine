@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.31)
+cmake_minimum_required(VERSION 3.25)
 
 # Ensure doxygen
 find_package(Doxygen REQUIRED)

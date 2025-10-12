@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.31)
+cmake_minimum_required(VERSION 3.25)
 project(TyrantGameEngine VERSION 2.0.0.0 LANGUAGES CXX)
 include(./CMake/Tyrant.cmake)
 
@@ -34,6 +34,7 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 # Options
 TGE_OPTION(TGE_BUILD_SHARED BOOL FALSE "TRUE to build the runtime as a shared library, FALSE to build the runtime for static linkage")
 TGE_OPTION(TGE_BUILD_DOCS BOOL TRUE "TRUE to build the documentation, FALSE to not (requires doxygen)")
+TGE_OPTION(TGE_BUILD_TESTS BOOL TRUE "Enable building and running the test suite")
 
 # Add Subdirectories
 add_subdirectory("Runtime")
@@ -41,4 +42,8 @@ add_subdirectory("Editor")
 
 if(TGE_BUILD_DOCS)
   add_subdirectory("Docs")
+endif()
+
+if(TGE_BUILD_TESTS)
+  add_subdirectory("Tests")
 endif()
