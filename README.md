@@ -3,6 +3,7 @@
 Tyrant Game Engine (TGE) is a modular, data-driven runtime focused on rapid iteration for game prototypes and experimental rendering pipelines. The repository provides the core runtime, supporting tools, and build workflows needed to explore engine concepts across desktop platforms.
 
 ## Table of Contents
+
 - [Project Overview](#project-overview)
 - [Dependencies](#dependencies)
 - [Setup Instructions](#setup-instructions)
@@ -15,19 +16,20 @@ Tyrant Game Engine (TGE) is a modular, data-driven runtime focused on rapid iter
   - [Workflow Shortcuts](#workflow-shortcuts)
   - [Output Directory Layout](#output-directory-layout)
 - [Usage Instructions](#usage-instructions)
+- [License](#license)
 
 ## Project Overview
+
 TGE emphasizes clean abstractions, testability, and extensible subsystems so new gameplay or rendering features can be layered in without disrupting existing modules. The engine runtime is paired with editor tooling and documentation that demonstrate how to bootstrap game experiences, integrate custom modules, and iterate quickly across platforms.
 
-[(Back to top)](#table-of-contents)
-
 ## Dependencies
+
 Core build requirements:
 - **C/C++ Compiler**
   - Windows: Microsoft Visual C++ (MSVC)
   - macOS: Clang (via Xcode Command Line Tools)
   - Linux: GCC or Clang
-- **[CMake](https://cmake.org/)** (3.27+ recommended)
+- **[CMake](https://cmake.org/)** (3.25+ required)
 - **[Ninja](https://ninja-build.org/)**
 
 Optional tooling:
@@ -37,7 +39,9 @@ Optional tooling:
 [(Back to top)](#table-of-contents)
 
 ## Setup Instructions
+
 ### Install Prerequisites
+
 <details>
 <summary><b>Ubuntu / Debian</b></summary>
 
@@ -64,14 +68,17 @@ sudo dnf install gcc gcc-c++ clang ninja-build cmake doxygen graphviz gtest-deve
 Pre-compiled binaries are not available yet; follow the build-from-source workflow below to compile the engine locally.
 
 ### Configure Environment Variables
+
 No special environment variables are required. Ensure your compiler, CMake, and Ninja are discoverable on the system `PATH` before configuring the project.
 
 [(Back to top)](#table-of-contents)
 
 ## Build from Source
+
 TGE ships with an extensive `CMakePresets.json` that encapsulates all common configure, build, and test workflows. Presets automatically stage outputs in the `artifacts/` directory so runtime assets, libraries, documentation, and packages stay organized.
 
 ### Using CMake Presets
+
 Presets follow a `{platform}-{architecture}-{configuration}` convention (e.g., `linux-x64-debug` or `windows-arm64-release`). Each platform preset inherits shared base settings so you can mix and match any combination of:
 
 - **Platform:** `windows`, `macos`, or `linux`
@@ -91,6 +98,7 @@ cmake --build --preset linux-x64-debug
 ```
 
 ### Running Tests and Benchmarks
+
 When GoogleTest/GoogleMock and Google Benchmark are available, enable and execute tests via CTest:
 
 ```bash
@@ -100,6 +108,7 @@ ctest --preset linux-x64-debug
 Benchmarks are exposed as CTest entries that forward to the benchmark executables. Use `--preset` in the same way to emit benchmark output.
 
 ### Packaging
+
 Packaging presets are provided for **release** configurations only. Attempting to package a debug build (e.g., `linux-x64-debug`) will fail because the corresponding preset does not exist. To generate distributable bundles, target a release preset:
 
 ```bash
@@ -109,6 +118,7 @@ cmake --build --preset linux-x64-release --target package
 or leverage the release workflow presets described below to run configure, build, tests, and packaging in a single command.
 
 ### Workflow Shortcuts
+
 Workflow presets chain multiple steps together. Debug workflows perform **configure → build → test**, whereas release workflows add a final **package** step:
 
 ```bash
@@ -119,6 +129,7 @@ cmake --workflow --preset linux-x64-release   # configure + build + test + packa
 These workflows are ideal for continuous integration or full local validation.
 
 ### Output Directory Layout
+
 All generated assets live under `artifacts/` by default:
 
 ```
@@ -135,6 +146,13 @@ This structure keeps temporary and distributable assets separate from source, si
 [(Back to top)](#table-of-contents)
 
 ## Usage Instructions
+
 After building documentation presets, open `artifacts/docs/html/index.html` for full engine usage instructions, API references, and tutorials.
+
+[(Back to top)](#table-of-contents)
+
+## License
+
+Tyrant Game Engine 2.0 is distributed under the [MIT License](LICENSE.md). Refer to the license file for complete terms and conditions.
 
 [(Back to top)](#table-of-contents)
