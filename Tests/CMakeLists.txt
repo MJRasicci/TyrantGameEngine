@@ -1,26 +1,23 @@
 cmake_minimum_required(VERSION 3.25)
 
 include(CTest)
-include(FetchContent)
 
-set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
+find_package(GTest CONFIG QUIET)
+if(GTest_FOUND)
+    include(GoogleTest)
+    set(TGE_ENABLE_TESTS ON)
+else()
+    message(STATUS "GoogleTest not found; unit tests will be skipped.")
+    set(TGE_ENABLE_TESTS OFF)
+endif()
 
-FetchContent_Declare(
-    GTest
-    URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
-)
-FetchContent_MakeAvailable(GTest)
-
-set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
-set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(
-    benchmark
-    URL https://github.com/google/benchmark/archive/refs/tags/v1.8.3.zip
-)
-FetchContent_MakeAvailable(benchmark)
-
-include(GoogleTest)
+find_package(benchmark CONFIG QUIET)
+if(benchmark_FOUND)
+    set(TGE_ENABLE_BENCHMARKS ON)
+else()
+    message(STATUS "Google Benchmark not found; benchmark targets will be skipped.")
+    set(TGE_ENABLE_BENCHMARKS OFF)
+endif()
 
 function(TGE_TEST_MODULE module)
     if("${module}" STREQUAL "")
@@ -46,6 +43,9 @@ function(TGE_TEST_MODULE module)
     endif()
 
     if(unit_sources)
+        if(NOT TGE_ENABLE_TESTS)
+            message(STATUS "Skipping unit tests for module ${module}; GoogleTest not available.")
+        else()
         set(test_target "tge_test_${module}")
         add_executable(${test_target} ${unit_sources})
         target_compile_features(${test_target} PRIVATE cxx_std_23)
@@ -55,12 +55,16 @@ function(TGE_TEST_MODULE module)
             set_target_properties(${test_target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
         endif()
 
-        gtest_discover_tests(${test_target} TEST_PREFIX "${module}.")
+            gtest_discover_tests(${test_target} TEST_PREFIX "${module}.")
+        endif()
     else()
         message(WARNING "TGE_TEST_MODULE ${module}: no unit test sources found under ${unit_dir}")
     endif()
 
     if(benchmark_sources)
+        if(NOT TGE_ENABLE_BENCHMARKS)
+            message(STATUS "Skipping benchmarks for module ${module}; Google Benchmark not available.")
+        else()
         set(benchmark_target "tge_bench_${module}")
         add_executable(${benchmark_target} ${benchmark_sources})
         target_compile_features(${benchmark_target} PRIVATE cxx_std_23)
@@ -71,6 +75,7 @@ function(TGE_TEST_MODULE module)
         endif()
 
         add_test(NAME "${module}.Benchmarks" COMMAND ${benchmark_target} --benchmark_format=console)
+        endif()
     endif()
 
     if(NOT unit_sources AND NOT benchmark_sources)
