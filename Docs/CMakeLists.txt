@@ -1,7 +1,11 @@
 cmake_minimum_required(VERSION 3.25)
 
 # Ensure doxygen
-find_package(Doxygen REQUIRED)
+find_package(Doxygen QUIET)
+if(NOT Doxygen_FOUND)
+    message(STATUS "Doxygen not found; skipping documentation targets.")
+    return()
+endif()
 
 # --------------------------------------------
 # Bring in doxygen-awesome-css via FetchContent
