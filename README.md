@@ -11,12 +11,15 @@ Tyrant Game Engine (TGE) is a modular, data-driven runtime focused on rapid iter
 - [Build from Source](#build-from-source)
   - [Using CMake Presets](#using-cmake-presets)
   - [Running Tests and Benchmarks](#running-tests-and-benchmarks)
+  - [Packaging](#packaging)
   - [Workflow Shortcuts](#workflow-shortcuts)
   - [Output Directory Layout](#output-directory-layout)
-- [Documentation](#documentation)
+- [Usage Instructions](#usage-instructions)
 
 ## Project Overview
 TGE emphasizes clean abstractions, testability, and extensible subsystems so new gameplay or rendering features can be layered in without disrupting existing modules. The engine runtime is paired with editor tooling and documentation that demonstrate how to bootstrap game experiences, integrate custom modules, and iterate quickly across platforms.
+
+[(Back to top)](#table-of-contents)
 
 ## Dependencies
 Core build requirements:
@@ -30,6 +33,8 @@ Core build requirements:
 Optional tooling:
 - **[Doxygen](https://www.doxygen.nl/)** and **[Graphviz](https://graphviz.org/)** for generating API documentation
 - **[GoogleTest](https://github.com/google/googletest)** / **GoogleMock** / **[Google Benchmark](https://github.com/google/benchmark)** for unit tests and benchmarks
+
+[(Back to top)](#table-of-contents)
 
 ## Setup Instructions
 ### Install Prerequisites
@@ -61,10 +66,18 @@ Pre-compiled binaries are not available yet; follow the build-from-source workfl
 ### Configure Environment Variables
 No special environment variables are required. Ensure your compiler, CMake, and Ninja are discoverable on the system `PATH` before configuring the project.
 
+[(Back to top)](#table-of-contents)
+
 ## Build from Source
 TGE ships with an extensive `CMakePresets.json` that encapsulates all common configure, build, and test workflows. Presets automatically stage outputs in the `artifacts/` directory so runtime assets, libraries, documentation, and packages stay organized.
 
 ### Using CMake Presets
+Presets follow a `{platform}-{architecture}-{configuration}` convention (e.g., `linux-x64-debug` or `windows-arm64-release`). Each platform preset inherits shared base settings so you can mix and match any combination of:
+
+- **Platform:** `windows`, `macos`, or `linux`
+- **Architecture:** `x64` or `arm64`
+- **Configuration:** `debug` or `release`
+
 Configure the project for your preferred toolchain:
 
 ```bash
@@ -86,11 +99,21 @@ ctest --preset linux-x64-debug
 
 Benchmarks are exposed as CTest entries that forward to the benchmark executables. Use `--preset` in the same way to emit benchmark output.
 
-### Workflow Shortcuts
-The repository contains higher-level presets (e.g., `linux-x64-all`) that configure, build, run tests, and package artifacts in one command:
+### Packaging
+Packaging presets are provided for **release** configurations only. Attempting to package a debug build (e.g., `linux-x64-debug`) will fail because the corresponding preset does not exist. To generate distributable bundles, target a release preset:
 
 ```bash
-cmake --workflow --preset linux-x64-all
+cmake --build --preset linux-x64-release --target package
+```
+
+or leverage the release workflow presets described below to run configure, build, tests, and packaging in a single command.
+
+### Workflow Shortcuts
+Workflow presets chain multiple steps together. Debug workflows perform **configure → build → test**, whereas release workflows add a final **package** step:
+
+```bash
+cmake --workflow --preset linux-x64-debug     # configure + build + test
+cmake --workflow --preset linux-x64-release   # configure + build + test + package
 ```
 
 These workflows are ideal for continuous integration or full local validation.
@@ -109,5 +132,9 @@ artifacts/
 
 This structure keeps temporary and distributable assets separate from source, simplifying cleanup and deployment.
 
-## Documentation
+[(Back to top)](#table-of-contents)
+
+## Usage Instructions
 After building documentation presets, open `artifacts/docs/html/index.html` for full engine usage instructions, API references, and tutorials.
+
+[(Back to top)](#table-of-contents)
