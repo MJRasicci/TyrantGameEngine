@@ -8,7 +8,7 @@ Tyrant Game Engine (TGE) is a modular, data-driven runtime focused on rapid iter
 - [Dependencies](#dependencies)
 - [Setup Instructions](#setup-instructions)
   - [Install Prerequisites](#install-prerequisites)
-  - [Configure Environment Variables](#configure-environment-variables)
+  - [Install Tyrant Game Engine](#install-tyrant-game-engine)
 - [Build from Source](#build-from-source)
   - [Using CMake Presets](#using-cmake-presets)
   - [Running Tests and Benchmarks](#running-tests-and-benchmarks)
@@ -58,18 +58,48 @@ sudo apt install build-essential clang ninja-build cmake doxygen graphviz libgte
 <summary><b>Fedora / Red Hat</b></summary>
 
 ```bash
-sudo dnf install gcc gcc-c++ clang ninja-build cmake doxygen graphviz gtest-devel benchmark-devel
+sudo dnf install gcc gcc-c++ clang ninja-build cmake doxygen graphviz gtest-devel google-benchmark-devel
 ```
 
 > **Note:** Some distributions package Google Benchmark separately (e.g., `benchmark` vs. `benchmark-devel`). Install the development package for headers and libraries.
 
 </details>
 
+<details>
+<summary><b>macOS</b></summary>
+
+```bash
+# Install Xcode command line tools (provides Clang and essential build tools)
+xcode-select --install
+
+# Install Homebrew if not already installed
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install dependencies via Homebrew
+brew update
+brew install cmake ninja doxygen graphviz googletest google-benchmark
+```
+
+</details>
+
+<details>
+<summary><b>Windows</b></summary>
+
+```bash
+winget install Microsoft.VisualStudio.2022.BuildTools
+winget install Kitware.CMake
+winget install Ninja-build.Ninja
+winget install Doxygen.Doxygen
+winget install Graphviz.Graphviz
+winget install Google.Test
+winget install Google.Benchmark
+```
+
+</details>
+
+### Install Tyrant Game Engine
+
 Pre-compiled binaries are not available yet; follow the build-from-source workflow below to compile the engine locally.
-
-### Configure Environment Variables
-
-No special environment variables are required. Ensure your compiler, CMake, and Ninja are discoverable on the system `PATH` before configuring the project.
 
 [(Back to top)](#table-of-contents)
 
@@ -88,7 +118,7 @@ Presets follow a `{platform}-{architecture}-{configuration}` convention (e.g., `
 Configure the project for your preferred toolchain:
 
 ```bash
-cmake --preset linux-x64-debug    # or linux-x64-release, windows-msvc-release, etc.
+cmake --preset linux-x64-debug
 ```
 
 Build targets for the active preset:
@@ -122,8 +152,8 @@ or leverage the release workflow presets described below to run configure, build
 Workflow presets chain multiple steps together. Debug workflows perform **configure → build → test**, whereas release workflows add a final **package** step:
 
 ```bash
-cmake --workflow --preset linux-x64-debug     # configure + build + test
-cmake --workflow --preset linux-x64-release   # configure + build + test + package
+cmake --workflow --preset linux-x64-debug     # run configure + build + test
+cmake --workflow --preset linux-x64-release   # run configure + build + test + package
 ```
 
 These workflows are ideal for continuous integration or full local validation.
@@ -134,11 +164,11 @@ All generated assets live under `artifacts/` by default:
 
 ```
 artifacts/
+├── bin/        # Executable outputs (editor, tests, benchmarks)
 ├── build/      # CMake cache and intermediate build tree
-├── bin/        # Executable outputs (engine runtime, tools, tests, benchmarks)
+├── docs/       # Doxygen-generated API documentation
 ├── lib/        # Static or shared libraries produced by the build
-├── docs/       # Doxygen-generated API documentation (HTML, XML, etc.)
-└── packages/   # CPack staging area for distributable bundles
+└── pack/       # CPack staging area for distributable bundles
 ```
 
 This structure keeps temporary and distributable assets separate from source, simplifying cleanup and deployment.
