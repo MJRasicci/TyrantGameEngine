@@ -45,5 +45,10 @@ if(TGE_BUILD_DOCS)
 endif()
 
 if(TGE_BUILD_TESTS)
-  add_subdirectory("Tests")
+  include(CTest)
+
+  if(BUILD_TESTING)
+    enable_testing()
+    add_subdirectory("Tests")
+  endif()
 endif()

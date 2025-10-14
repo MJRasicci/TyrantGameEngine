@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
 
-include(CTest)
-
 find_package(GTest CONFIG QUIET)
 if(GTest_FOUND)
     include(GoogleTest)
@@ -46,17 +44,23 @@ function(TGE_TEST_MODULE module)
         if(NOT TGE_ENABLE_TESTS)
             message(STATUS "Skipping unit tests for module ${module}; GoogleTest not available.")
         else()
-        set(test_target "tge_test_${module}")
-        add_executable(${test_target} ${unit_sources})
-        target_compile_features(${test_target} PRIVATE cxx_std_23)
-        target_link_libraries(${test_target} PRIVATE TGE::runtime GTest::gmock_main)
-        set_target_properties(${test_target} PROPERTIES FOLDER "Tests/${module}")
-        if(CMAKE_RUNTIME_OUTPUT_DIRECTORY)
-            set_target_properties(${test_target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-        endif()
+            set(test_target "tge_test_${module}")
+            add_executable(${test_target} ${unit_sources})
+            target_compile_features(${test_target} PRIVATE cxx_std_23)
+            target_link_libraries(${test_target} PRIVATE TGE::runtime GTest::gmock_main)
+            set_target_properties(${test_target} PROPERTIES FOLDER "Tests/${module}")
 
-            gtest_discover_tests(${test_target} TEST_PREFIX "${module}.")
-        endif()
+            if(CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+                set_target_properties(${test_target} PROPERTIES
+                    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+            endif()
+
+            include(GoogleTest) # safe if repeated
+            gtest_discover_tests(${test_target}
+            TEST_PREFIX "${module}."
+            DISCOVERY_MODE PRE_TEST
+            WORKING_DIRECTORY $<TARGET_FILE_DIR:${test_target}>)
+    endif()
     else()
         message(WARNING "TGE_TEST_MODULE ${module}: no unit test sources found under ${unit_dir}")
     endif()
@@ -65,16 +69,20 @@ function(TGE_TEST_MODULE module)
         if(NOT TGE_ENABLE_BENCHMARKS)
             message(STATUS "Skipping benchmarks for module ${module}; Google Benchmark not available.")
         else()
-        set(benchmark_target "tge_bench_${module}")
-        add_executable(${benchmark_target} ${benchmark_sources})
-        target_compile_features(${benchmark_target} PRIVATE cxx_std_23)
-        target_link_libraries(${benchmark_target} PRIVATE TGE::runtime benchmark::benchmark_main)
-        set_target_properties(${benchmark_target} PROPERTIES FOLDER "Tests/${module}")
-        if(CMAKE_RUNTIME_OUTPUT_DIRECTORY)
-            set_target_properties(${benchmark_target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-        endif()
+            set(benchmark_target "tge_bench_${module}")
+            add_executable(${benchmark_target} ${benchmark_sources})
+            target_compile_features(${benchmark_target} PRIVATE cxx_std_23)
+            target_link_libraries(${benchmark_target} PRIVATE TGE::runtime benchmark::benchmark_main)
+            set_target_properties(${benchmark_target} PROPERTIES FOLDER "Tests/${module}")
 
-        add_test(NAME "${module}.Benchmarks" COMMAND ${benchmark_target} --benchmark_format=console)
+            if(CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+                set_target_properties(${benchmark_target} PROPERTIES
+                    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+            endif()
+
+            add_test(NAME "${module}.Benchmarks"
+                    COMMAND ${benchmark_target} --benchmark_format=console
+                    WORKING_DIRECTORY $<TARGET_FILE_DIR:${benchmark_target}>)
         endif()
     endif()
 
