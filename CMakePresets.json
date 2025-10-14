@@ -149,7 +149,7 @@
                 "outputOnFailure": true
             },
             "execution": {
-                "noTestsAction": "ignore",
+                "noTestsAction": "default",
                 "stopOnFailure": true
             }
         },
@@ -186,7 +186,7 @@
             "name": "generic-base",
             "hidden": true,
             "packageName": "TyrantGameEngine",
-            "packageDirectory": "${sourceDir}/artifacts/package"
+            "packageDirectory": "${sourceDir}/artifacts/pack"
         },
         {
             "name": "windows-base",
