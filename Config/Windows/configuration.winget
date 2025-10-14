@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=https://aka.ms/configuration-dsc-schema/0.2
+properties:
+  assertions:
+    - resource: Microsoft.Windows.Developer/OsVersion
+      directives:
+        description: "Require Windows 10 21H2 / Windows 11 or later for winget + tooling"
+      settings:
+        MinVersion: "10.0.19044"
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: appInstaller
+      directives:
+        description: "Ensure App Installer (winget) is available"
+        securityContext: elevated
+      settings:
+        id: "Microsoft.AppInstaller"
+        source: "msstore"
+        # No-op if already installed; provides winget on supported OSes.
+
+  resources:
+    # 1) MSVC Build Tools
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: vsBuildTools
+      directives:
+        description: "Install Visual Studio 2022 Build Tools (MSVC toolchain + SDK)"
+        securityContext: elevated
+      settings:
+        id: "Microsoft.VisualStudio.2022.BuildTools"
+        source: "winget"
+
+    # 2) Apply required VS workloads/components using a .vsconfig
+    - resource: Microsoft.VisualStudio.DSC/VSComponents
+      dependsOn:
+        - vsBuildTools
+      directives:
+        description: "Apply C++ toolchain components defined in vsconfig.json"
+        allowPrerelease: true
+        securityContext: elevated
+      settings:
+        productId: "Microsoft.VisualStudio.Product.BuildTools"
+        channelId: "VisualStudio.17.Release"
+        vsConfigFile: "${WinGetConfigRoot}\\.config\\windows\\vsconfig.json"
+        includeRecommended: false
+
+    # 3) Core cross-platform build tools
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: cmake
+      directives: { description: "CMake", securityContext: elevated }
+      settings: { id: "Kitware.CMake", source: "winget" }
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: ninja
+      directives: { description: "Ninja", securityContext: elevated }
+      settings: { id: "Ninja-build.Ninja", source: "winget" }
+
+    # 4) Optional documentation + test/bench tooling
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: doxygen
+      directives: { description: "Doxygen (optional)", securityContext: elevated }
+      settings: { id: "Doxygen.Doxygen", source: "winget" }
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: graphviz
+      directives: { description: "Graphviz (optional)", securityContext: elevated }
+      settings: { id: "Graphviz.Graphviz", source: "winget" }
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: gtest
+      directives: { description: "GoogleTest (optional)", securityContext: elevated }
+      settings: { id: "Google.Test", source: "winget" }
+
+    - resource: Microsoft.WinGet.DSC/WinGetPackage
+      id: gbench
+      directives: { description: "Google Benchmark (optional)", securityContext: elevated }
+      settings: { id: "Google.Benchmark", source: "winget" }
+
+  configurationVersion: 0.2.0

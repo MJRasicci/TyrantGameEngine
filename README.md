@@ -85,14 +85,8 @@ brew install cmake ninja doxygen graphviz googletest google-benchmark
 <details>
 <summary><b>Windows</b></summary>
 
-```bash
-winget install Microsoft.VisualStudio.2022.BuildTools
-winget install Kitware.CMake
-winget install Ninja-build.Ninja
-winget install Doxygen.Doxygen
-winget install Graphviz.Graphviz
-winget install Google.Test
-winget install Google.Benchmark
+```powershell
+winget configure -f ./Config/Windows/configuration.winget
 ```
 
 </details>
