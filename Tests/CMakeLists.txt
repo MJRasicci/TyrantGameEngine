@@ -1,6 +1,21 @@
 cmake_minimum_required(VERSION 3.25)
 
-include(CTest)
+find_package(GTest CONFIG QUIET)
+if(GTest_FOUND)
+    include(GoogleTest)
+    set(TGE_ENABLE_TESTS ON)
+else()
+    message(STATUS "GoogleTest not found; unit tests will be skipped.")
+    set(TGE_ENABLE_TESTS OFF)
+endif()
+
+find_package(benchmark CONFIG QUIET)
+if(benchmark_FOUND)
+    set(TGE_ENABLE_BENCHMARKS ON)
+else()
+    message(STATUS "Google Benchmark not found; benchmark targets will be skipped.")
+    set(TGE_ENABLE_BENCHMARKS OFF)
+endif()
 
 function(TGE_TEST_MODULE module)
     if("${module}" STREQUAL "")
@@ -12,42 +27,68 @@ function(TGE_TEST_MODULE module)
         message(FATAL_ERROR "TGE_TEST_MODULE ${module}: directory not found at ${module_dir}")
     endif()
 
-    file(GLOB_RECURSE test_sources CONFIGURE_DEPENDS
-        "${module_dir}/*.c"
-        "${module_dir}/*.cc"
-        "${module_dir}/*.cxx"
-        "${module_dir}/*.cpp")
+    set(unit_dir "${module_dir}/Unit")
+    set(benchmark_dir "${module_dir}/Benchmarks")
 
-    if(test_sources STREQUAL "")
-        message(WARNING "TGE_TEST_MODULE ${module}: no test sources found under ${module_dir}")
-        return()
+    set(unit_sources)
+    if(IS_DIRECTORY "${unit_dir}")
+        file(GLOB unit_sources CONFIGURE_DEPENDS "${unit_dir}/*.cpp")
     endif()
 
-    foreach(src IN LISTS test_sources)
-        file(RELATIVE_PATH rel_path "${module_dir}" "${src}")
-        get_filename_component(stem "${rel_path}" NAME_WE)
-        get_filename_component(rel_dir "${rel_path}" DIRECTORY)
+    set(benchmark_sources)
+    if(IS_DIRECTORY "${benchmark_dir}")
+        file(GLOB benchmark_sources CONFIGURE_DEPENDS "${benchmark_dir}/*.cpp")
+    endif()
 
-        if(rel_dir STREQUAL "" OR rel_dir STREQUAL ".")
-            set(test_name "${module}.${stem}")
-            set(target_suffix "${stem}")
+    if(unit_sources)
+        if(NOT TGE_ENABLE_TESTS)
+            message(STATUS "Skipping unit tests for module ${module}; GoogleTest not available.")
         else()
-            string(REPLACE "/" "." rel_dir_dots "${rel_dir}")
-            set(test_name "${module}.${rel_dir_dots}.${stem}")
-            set(target_suffix "${rel_dir}/${stem}")
+            set(test_target "tge_test_${module}")
+            add_executable(${test_target} ${unit_sources})
+            target_compile_features(${test_target} PRIVATE cxx_std_23)
+            target_link_libraries(${test_target} PRIVATE TGE::runtime GTest::gmock_main)
+            set_target_properties(${test_target} PROPERTIES FOLDER "Tests/${module}")
+
+            if(CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+                set_target_properties(${test_target} PROPERTIES
+                    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+            endif()
+
+            include(GoogleTest) # safe if repeated
+            gtest_discover_tests(${test_target}
+            TEST_PREFIX "${module}."
+            DISCOVERY_MODE PRE_TEST
+            WORKING_DIRECTORY $<TARGET_FILE_DIR:${test_target}>)
+    endif()
+    else()
+        message(WARNING "TGE_TEST_MODULE ${module}: no unit test sources found under ${unit_dir}")
+    endif()
+
+    if(benchmark_sources)
+        if(NOT TGE_ENABLE_BENCHMARKS)
+            message(STATUS "Skipping benchmarks for module ${module}; Google Benchmark not available.")
+        else()
+            set(benchmark_target "tge_bench_${module}")
+            add_executable(${benchmark_target} ${benchmark_sources})
+            target_compile_features(${benchmark_target} PRIVATE cxx_std_23)
+            target_link_libraries(${benchmark_target} PRIVATE TGE::runtime benchmark::benchmark_main)
+            set_target_properties(${benchmark_target} PROPERTIES FOLDER "Tests/${module}")
+
+            if(CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+                set_target_properties(${benchmark_target} PROPERTIES
+                    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+            endif()
+
+            add_test(NAME "${module}.Benchmarks"
+                    COMMAND ${benchmark_target} --benchmark_format=console
+                    WORKING_DIRECTORY $<TARGET_FILE_DIR:${benchmark_target}>)
         endif()
+    endif()
 
-        string(REPLACE "/" "_" target_suffix "${target_suffix}")
-        string(REGEX REPLACE "[^A-Za-z0-9_]" "_" target_suffix "${target_suffix}")
-        set(target "tge_test_${module}_${target_suffix}")
-
-        add_executable(${target} ${src})
-        target_compile_features(${target} PRIVATE cxx_std_23)
-        target_link_libraries(${target} PRIVATE TGE::runtime)
-        set_target_properties(${target} PROPERTIES FOLDER "Tests/${module}")
-
-        add_test(NAME "${test_name}" COMMAND ${target})
-    endforeach()
+    if(NOT unit_sources AND NOT benchmark_sources)
+        message(WARNING "TGE_TEST_MODULE ${module}: no test or benchmark sources found under ${module_dir}")
+    endif()
 endfunction()
 
 # Register runtime module test suites here
