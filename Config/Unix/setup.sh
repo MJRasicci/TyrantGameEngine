@@ -298,7 +298,48 @@ is_pkg_installed() {
       rpm -q "$pkg" >/dev/null 2>&1
       ;;
     brew)
-      brew list --versions "$pkg" >/dev/null 2>&1
+      # Homebrew first
+      if brew list --versions "$pkg" >/dev/null 2>&1; then
+        return 0
+      fi
+
+      # Fallbacks for non-brew installs on macOS
+      case "$pkg" in
+        cmake)
+          command -v cmake >/dev/null 2>&1
+          return $?
+          ;;
+        ninja)
+          command -v ninja >/dev/null 2>&1
+          return $?
+          ;;
+        doxygen)
+          command -v doxygen >/dev/null 2>&1
+          return $?
+          ;;
+        graphviz)
+          # Graphviz exposes 'dot'
+          command -v dot >/dev/null 2>&1
+          return $?
+          ;;
+        googletest|googletest@*)
+          # Heuristic: presence via pkg-config (MacPorts/source installs often expose this)
+          if command -v pkg-config >/dev/null 2>&1; then
+            pkg-config --exists gtest 2>/dev/null && return 0
+            pkg-config --exists gtest_main 2>/dev/null && return 0
+          fi
+          return 1
+          ;;
+        google-benchmark|google-benchmark@*|benchmark)
+          if command -v pkg-config >/dev/null 2>&1; then
+            pkg-config --exists benchmark 2>/dev/null && return 0
+          fi
+          return 1
+          ;;
+        *)
+          return 1
+          ;;
+      esac
       ;;
     *)
       return 1
@@ -309,10 +350,26 @@ is_pkg_installed() {
 pkg_version() {
   local pkg="$1"
   case "$PM" in
-    apt-get) pkg_version_apt "$pkg" ;;
-    dnf)     pkg_version_dnf "$pkg" ;;
-    brew)    brew_version "$pkg" ;;
-    *)       echo "" ;;
+    apt-get)
+      pkg_version_apt "$pkg"
+      ;;
+    dnf)
+      pkg_version_dnf "$pkg"
+      ;;
+    brew)
+      # Prefer Homebrew metadata; if not installed via brew, fall back to tool probe and tag it.
+      local v
+      v="$(brew_version "$pkg")"
+      if [[ -n "$v" ]]; then
+        echo "$v"
+      else
+        v="$(probe_version_for_logical "$pkg")"
+        [[ -n "$v" ]] && echo "$v [non-brew]"
+      fi
+      ;;
+    *)
+      echo ""
+      ;;
   esac
 }
 
