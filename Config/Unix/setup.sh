@@ -155,19 +155,22 @@ brew_version() {
 }
 
 tool_version() {
-  # best-effort executable version extraction by common flags
-  # arg1: cmd, arg2: regex to extract version
+  # Extract the first version-looking token from a tool's --version output.
+  # arg1: cmd, arg2 (optional): custom grep regex
   local cmd="$1"; shift
-  local regex="${1:-([0-9]+(\.[0-9]+)+)}"
-  if ! command_exists "$cmd"; then return 1; fi
-  local out=""
-  # Try common version flags
+  local rx="${1:-[0-9]+([.][0-9]+)+}"
+  command -v "$cmd" >/dev/null 2>&1 || return 1
+
+  # Try a few common flags; stop at the first that prints something.
+  local out
   for flag in "--version" "-version" "-v" "-V"; do
-    out="$("$cmd" "$flag" 2>&1 | tr -d '\r' || true)"
+    out="$("$cmd" "$flag" 2>&1 | LC_ALL=C tr -d '\r' || true)"
     [[ -n "$out" ]] && break
   done
   [[ -z "$out" ]] && return 1
-  echo "$out" | sed -n -E "s/.*${regex}.*/\1/p" | head -n1
+
+  # Pull the first version token (works across GNU/BSD tools).
+  echo "$out" | grep -Eo "$rx" | head -n1
 }
 
 # Map logical to executable probes (for nicer version lines)
