@@ -377,6 +377,10 @@ pkg_version() {
 }
 
 audit_packages() {
+  # RESET STATE so re-audits don't reuse old results
+  MISSING_PKGS=()
+  PKG_STATUS=()
+
   title "Dependency Audit (${PM_NAME})"
   printf "%-26s | %-10s | %s\n" "Package" "Status" "Version/Details"
   bar
