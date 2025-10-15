@@ -426,6 +426,22 @@ audit_packages() {
   fi
 }
 
+apt_update_if_needed() {
+  # Run apt-get update before installs to avoid stale/missing indexes (typical in CI).
+  # Respects -v (verbose) and -y (non-interactive) flags from the script.
+
+  # Non-interactive env prevents tzdata and friends from prompting in CI.
+  if [[ "$ASSUME_YES" -eq 1 ]]; then
+    export DEBIAN_FRONTEND=noninteractive
+  fi
+
+  if [[ "$VERBOSE" -eq 1 ]]; then
+    $PM_SUDO apt-get update
+  else
+    $PM_SUDO apt-get update -qq >/dev/null 2>&1
+  fi
+}
+
 # --------------------------- Installer ---------------------------
 install_missing() {
   [[ ${#MISSING_PKGS[@]} -eq 0 ]] && return 0
@@ -454,13 +470,38 @@ install_missing() {
   else
     local yflag="" qflags=""
     [[ "$ASSUME_YES" -eq 1 ]] && yflag="$PM_Y_FLAG"
-    if [[ "$VERBOSE" -eq 1 ]]; then
-      $PM_SUDO $PM_INSTALL_CMD $yflag "${MISSING_PKGS[@]}"
-    else
-      # quiet mode
-      qflags="$PM_QUIET_FLAGS"
-      $PM_SUDO $PM_INSTALL_CMD $yflag $qflags "${MISSING_PKGS[@]}" >/dev/null 2>&1
-    fi
+
+    case "$PM" in
+      apt-get)
+        # Always refresh package lists before installing on Debian/Ubuntu
+        apt_update_if_needed
+        if [[ "$VERBOSE" -eq 1 ]]; then
+          $PM_SUDO $PM_INSTALL_CMD $yflag "${MISSING_PKGS[@]}"
+        else
+          qflags="$PM_QUIET_FLAGS"
+          $PM_SUDO $PM_INSTALL_CMD $yflag $qflags "${MISSING_PKGS[@]}" >/dev/null 2>&1
+        fi
+        ;;
+      dnf)
+        if [[ "$VERBOSE" -eq 1 ]]; then
+          # existing per-PM verbose installs...
+          $PM_SUDO $PM_INSTALL_CMD $yflag "${MISSING_PKGS[@]}"
+        else
+          qflags="$PM_QUIET_FLAGS"
+          # existing per-PM quiet installs...
+          $PM_SUDO $PM_INSTALL_CMD $yflag $qflags "${MISSING_PKGS[@]}" >/dev/null 2>&1
+        fi
+        ;;
+      *)
+        # Fallback
+        if [[ "$VERBOSE" -eq 1 ]]; then
+          $PM_SUDO $PM_INSTALL_CMD $yflag "${MISSING_PKGS[@]}"
+        else
+          qflags="$PM_QUIET_FLAGS"
+          $PM_SUDO $PM_INSTALL_CMD $yflag $qflags "${MISSING_PKGS[@]}" >/dev/null 2>&1
+        fi
+        ;;
+    esac
   fi
 
   if [[ $? -eq 0 ]]; then
