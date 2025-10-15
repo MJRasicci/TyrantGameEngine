@@ -42,54 +42,27 @@ Optional tooling:
 
 ### Install Prerequisites
 
-<details>
-<summary><b>Ubuntu / Debian</b></summary>
+#### Linux & macOS
+
+Use the provided setup script to bootstrap the required toolchain along with optional documentation, testing, and benchmarking dependencies:
 
 ```bash
-sudo apt update
-sudo apt install build-essential clang ninja-build cmake doxygen graphviz libgtest-dev libbenchmark-dev
+./.config/unix/setup.sh
 ```
 
-> **Note:** `libgtest-dev` and `libbenchmark-dev` provide the headers and libraries required for unit tests and benchmarks. If they are unavailable, you can still build the engine without the test targets.
+The script auto-detects Debian/Ubuntu (APT), Fedora/RHEL (DNF), or macOS (Homebrew) environments and prompts before installing anything that is missing. Explore advanced usage with `./.config/unix/setup.sh --help`:
 
-</details>
+- `-y/--yes` enables unattended installs.
+- `-r/--required` restricts installs to the minimal build toolchain.
+- `-v/--verbose` surfaces package-manager output for troubleshooting.
 
-<details>
-<summary><b>Fedora / Red Hat</b></summary>
+> **Note:** On macOS the setup script also validates the Xcode Command Line Tools and installs Homebrew packages for optional tooling such as Doxygen, Graphviz, GoogleTest, and Google Benchmark.
 
-```bash
-sudo dnf install gcc gcc-c++ clang ninja-build cmake doxygen graphviz gtest-devel google-benchmark-devel
-```
-
-> **Note:** Some distributions package Google Benchmark separately (e.g., `benchmark` vs. `benchmark-devel`). Install the development package for headers and libraries.
-
-</details>
-
-<details>
-<summary><b>macOS</b></summary>
-
-```bash
-# Install Xcode command line tools (provides Clang and essential build tools)
-xcode-select --install
-
-# Install Homebrew if not already installed
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Install dependencies via Homebrew
-brew update
-brew install cmake ninja doxygen graphviz googletest google-benchmark
-```
-
-</details>
-
-<details>
-<summary><b>Windows</b></summary>
+#### Windows
 
 ```powershell
 winget configure -f ./.config/windows/configuration.winget
 ```
-
-</details>
 
 ### Install Tyrant Game Engine
 
