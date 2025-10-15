@@ -86,7 +86,7 @@ brew install cmake ninja doxygen graphviz googletest google-benchmark
 <summary><b>Windows</b></summary>
 
 ```powershell
-winget configure -f ./Config/Windows/configuration.winget
+winget configure -f ./.config/windows/configuration.winget
 ```
 
 </details>
