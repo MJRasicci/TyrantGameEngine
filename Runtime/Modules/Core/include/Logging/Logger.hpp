@@ -16,10 +16,13 @@
 #include "Export.hpp"
 #include "LogLevel.hpp"
 #include "LogMessage.hpp"
-#include "LogBuffer.hpp"
 #include "LoggingOptions.hpp"
 #include "GlobalLogger.hpp"
-#include <iostream>
+
+#include <memory>
+#include <exception>
+#include <string_view>
+#include <utility>
 
 namespace TGE {
 
@@ -52,7 +55,10 @@ template<class T>
 class Logger : public ILogger
 {
 public:
-    Logger(std::shared_ptr<GlobalLogger> globalLogger) : globalLogger(globalLogger)
+    /**
+     * @brief Builds a logger bound to the shared global dispatcher.
+     */
+    explicit Logger(std::shared_ptr<GlobalLogger> globalLogger) : globalLogger(std::move(globalLogger))
     {
     }
 

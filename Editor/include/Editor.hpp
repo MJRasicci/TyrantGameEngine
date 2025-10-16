@@ -1,17 +1,25 @@
 #pragma once
 
+#include "Logging/GlobalLogger.hpp"
 #include "Logging/Logger.hpp"
+#include "Logging/LoggingOptions.hpp"
+
 #include <memory>
 
+/**
+ * @brief Entry point for running the Tyrant editor application.
+ */
 class Editor
 {
 public:
-    void Run()
-    {
-        auto globalLogger = std::make_shared<TGE::GlobalLogger>();
-        auto logger = std::make_shared<TGE::Logger<Editor>>(globalLogger);
-        logger->Info("Starting Editor...");
-        // If we don't do this, the app shuts down before buffers flush and log messages actually get written
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
+    Editor();
+
+    /**
+     * @brief Executes the editor main loop.
+     */
+    void Run();
+
+private:
+    std::shared_ptr<TGE::GlobalLogger> globalLogger;
+    std::shared_ptr<TGE::Logger<Editor>> logger;
 };

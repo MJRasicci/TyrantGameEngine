@@ -1,42 +1,64 @@
 #pragma once
 
-#include "LoggingOptions.hpp"
-#include "LogMessage.hpp"
-#include "LogBuffer.hpp"
-#include <iostream>
-#include <thread>
+#include "Logging/LoggingOptions.hpp"
+#include "Logging/LogMessage.hpp"
+
+#include <atomic>
+#include <condition_variable>
 #include <mutex>
 #include <queue>
-#include <condition_variable>
+#include <thread>
 
 namespace TGE {
 
-//===========================================================================//
-//=======> GlobalLogger class <==============================================//
-//===========================================================================//
-
+/**
+ * @brief Central asynchronous dispatcher that forwards log messages to registered sinks.
+ */
 class GlobalLogger
 {
 public:
+    /**
+     * @brief Creates a logger with default options (console sink, coloured output).
+     */
     GlobalLogger();
 
-    GlobalLogger(LoggingOptions options);
+    /**
+     * @brief Creates a logger using custom configuration.
+     */
+    explicit GlobalLogger(LoggingOptions options);
 
+    /**
+     * @brief Stops the worker thread and flushes outstanding messages.
+     */
     ~GlobalLogger();
 
-    // Method to enqueue log messages
+    /**
+     * @brief Enqueues a message for asynchronous processing.
+     */
     void Log(const LogMessage& message);
 
+    /**
+     * @brief Flushes pending messages to all sinks synchronously.
+     */
+    void Flush();
+
 private:
+    /**
+     * @brief Worker loop that drains the message queue.
+     */
     void ProcessQueue();
 
-    std::mutex queue_mutex_;
-    std::condition_variable cv_;
-    std::queue<LogMessage> log_queue_;
-    std::thread logging_thread_;
-    std::atomic<bool> stop_logging_;
-    LogBuffer buffer;
-    std::ostream log;
+    /**
+     * @brief Forwards a single message to each registered sink.
+     */
+    void Dispatch(const LogMessage& message);
+
+    std::mutex queueMutex;
+    std::condition_variable condition;
+    std::queue<LogMessage> messageQueue;
+    std::thread worker;
+    std::atomic<bool> stopRequested;
+    bool isDispatching = false;
     LoggingOptions options;
 };
 

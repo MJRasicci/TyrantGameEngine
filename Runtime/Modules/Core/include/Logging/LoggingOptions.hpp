@@ -1,33 +1,58 @@
 #pragma once
 
-#include <string>
-#include <chrono>
+#include "Logging/LogFormatter.hpp"
+#include "Logging/ILogSink.hpp"
+
+#include <memory>
+#include <vector>
 
 namespace TGE {
 
-//===========================================================================//
-//=======> LoggingOptions struct <===========================================//
-//===========================================================================//
-
-struct LoggingOptions
+/**
+ * @brief Aggregates configuration required to construct a @ref GlobalLogger.
+ */
+class LoggingOptions
 {
 public:
-    LoggingOptions() : LoggingOptions("{}")
-    { }
+    /**
+     * @brief Builds options with the default console sink and colourised formatter.
+     */
+    LoggingOptions();
 
-    LoggingOptions(std::string formatString) : FormatString(formatString)
-    {
-        LogToFile = false;
-        LogToConsole = true;
+    /**
+     * @brief Constructs options using a custom format string.
+     * @param formatString Template passed to the formatter. See @ref LogFormatter.
+     */
+    explicit LoggingOptions(std::string formatString);
 
-        std::chrono::zoned_time now{ std::chrono::current_zone(), std::chrono::system_clock::now() };
-        LogFilePath = std::format("{:%YY-%MM-%DD %HH:%MM:%SS}.log", now);
-    }
+    /**
+     * @brief Adds an output sink that should receive log messages.
+     */
+    void AddSink(std::shared_ptr<ILogSink> sink);
 
-    std::string FormatString;
-    std::string LogFilePath;
-    bool LogToFile;
-    bool LogToConsole;
+    /**
+     * @brief Removes all registered sinks.
+     */
+    void ClearSinks();
+
+    /**
+     * @brief Retrieves the list of sinks.
+     */
+    [[nodiscard]] const std::vector<std::shared_ptr<ILogSink>>& GetSinks() const noexcept;
+
+    /**
+     * @brief Returns the formatter used by the logging system.
+     */
+    [[nodiscard]] LogFormatter& GetFormatter() noexcept;
+
+    /**
+     * @brief Returns the formatter used by the logging system (const overload).
+     */
+    [[nodiscard]] const LogFormatter& GetFormatter() const noexcept;
+
+private:
+    LogFormatter formatter;
+    std::vector<std::shared_ptr<ILogSink>> sinks;
 };
 
 } // namespace TGE

@@ -1,51 +1,104 @@
 #include "Logging/GlobalLogger.hpp"
 
+#include <utility>
+
 namespace TGE {
 
-GlobalLogger::GlobalLogger() : GlobalLogger(LoggingOptions()) { }
+GlobalLogger::GlobalLogger()
+    : GlobalLogger(LoggingOptions{})
+{
+}
 
 GlobalLogger::GlobalLogger(LoggingOptions options)
-    : stop_logging_(false),
-        options(options),
-        buffer(options.LogFilePath),
-        log(&buffer)
+    : stopRequested(false),
+      options(std::move(options))
 {
-    log.setf(std::ios::unitbuf);
-
-    // Start the logging thread
-    logging_thread_ = std::thread(&GlobalLogger::ProcessQueue, this);
+    worker = std::thread(&GlobalLogger::ProcessQueue, this);
 }
 
 GlobalLogger::~GlobalLogger()
 {
-    // Stop the logging thread and clean up
-    stop_logging_ = true;
-    cv_.notify_all();
-    if (logging_thread_.joinable())
-        logging_thread_.join();
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        stopRequested = true;
+    }
+    condition.notify_all();
 
-    log.flush();
+    if (worker.joinable())
+    {
+        worker.join();
+    }
+
+    Flush();
 }
 
-// Method to enqueue log messages
 void GlobalLogger::Log(const LogMessage& message)
 {
-    std::lock_guard<std::mutex> lock(queue_mutex_);
-    log_queue_.push(message);
-    cv_.notify_one();
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        if (stopRequested.load())
+        {
+            return;
+        }
+        messageQueue.push(message);
+    }
+    condition.notify_one();
+}
+
+void GlobalLogger::Flush()
+{
+    std::unique_lock<std::mutex> lock(queueMutex);
+    condition.wait(lock, [this]
+    {
+        return messageQueue.empty() && !isDispatching;
+    });
+
+    lock.unlock();
+
+    const auto& sinks = options.GetSinks();
+    for (const auto& sink : sinks)
+    {
+        sink->Flush();
+    }
 }
 
 void GlobalLogger::ProcessQueue()
 {
-    while (!stop_logging_) {
-        std::unique_lock<std::mutex> lock(queue_mutex_);
-        cv_.wait(lock, [this] { return !log_queue_.empty() || stop_logging_; });
+    while (true)
+    {
+        std::unique_lock<std::mutex> lock(queueMutex);
+        condition.wait(lock, [this]
+        {
+            return stopRequested.load() || !messageQueue.empty();
+        });
 
-        while (!log_queue_.empty()) {
-            auto& message = log_queue_.front();
-            log << std::format("{}", message) << std::endl;
-            log_queue_.pop();
+        if (messageQueue.empty() && stopRequested.load())
+        {
+            condition.notify_all();
+            break;
         }
+
+        auto message = messageQueue.front();
+        messageQueue.pop();
+        isDispatching = true;
+        lock.unlock();
+
+        Dispatch(message);
+
+        lock.lock();
+        isDispatching = false;
+        condition.notify_all();
+    }
+}
+
+void GlobalLogger::Dispatch(const LogMessage& message)
+{
+    const auto& sinks = options.GetSinks();
+    auto formatted = options.GetFormatter().Format(message);
+
+    for (const auto& sink : sinks)
+    {
+        sink->Write(message, formatted);
     }
 }
 
