@@ -95,7 +95,34 @@ tool_version() {
   echo "$out" | grep -Eo "$rx" | head -n1
 }
 
-probe_version_for_logical() {
+logical_dependency_present() {
+  local logical="$1"
+  case "$logical" in
+    ninja)
+      command_exists ninja
+      ;;
+    cmake)
+      command_exists cmake
+      ;;
+    doxygen)
+      command_exists doxygen
+      ;;
+    graphviz)
+      command_exists dot
+      ;;
+    googletest)
+      command_exists pkg-config && pkg-config --exists gtest 2>/dev/null
+      ;;
+    google-benchmark)
+      command_exists pkg-config && pkg-config --exists benchmark 2>/dev/null
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+logical_dependency_version() {
   local logical="$1"
   case "$logical" in
     ninja)
@@ -111,10 +138,14 @@ probe_version_for_logical() {
       tool_version dot
       ;;
     googletest)
-      echo "(headers/libs present if package installed)"
+      if command_exists pkg-config && pkg-config --exists gtest 2>/dev/null; then
+        pkg-config --modversion gtest 2>/dev/null || echo "detected via pkg-config"
+      fi
       ;;
     google-benchmark)
-      echo "(libs present if package installed)"
+      if command_exists pkg-config && pkg-config --exists benchmark 2>/dev/null; then
+        pkg-config --modversion benchmark 2>/dev/null || echo "detected via pkg-config"
+      fi
       ;;
     *)
       ;;
@@ -227,14 +258,17 @@ audit_packages() {
   local pkg pkg_status color ver
   for pkg in "${ALL_PKGS[@]}"; do
     pkg_status="missing"; color="$RED"; ver="-"
-    if brew_pkg_installed "$pkg"; then
+    if logical_dependency_present "$pkg"; then
+      pkg_status="present"; color="$GREEN"
+      ver="$(logical_dependency_version "$pkg")"
+    elif brew_pkg_installed "$pkg"; then
       pkg_status="present"; color="$GREEN"
       ver="$(pkg_version "$pkg")"
-      [[ -z "$ver" ]] && ver="$(probe_version_for_logical "$pkg")"
-      [[ -z "$ver" ]] && ver="-"
+      [[ -z "$ver" ]] && ver="$(logical_dependency_version "$pkg")"
     else
       MISSING_PKGS+=("$pkg")
     fi
+    [[ -z "$ver" ]] && ver="-"
     printf "%-26s | %s%-10s%s | %s\n" "$pkg" "$color" "$pkg_status" "$RESET" "$ver"
   done
   bar
