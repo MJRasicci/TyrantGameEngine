@@ -42,19 +42,29 @@ Optional tooling:
 
 ### Install Prerequisites
 
-#### Linux & macOS
+#### Linux
 
-Use the provided setup script to bootstrap the required toolchain along with optional dependencies for generating documentation as well as performing automated testing and benchmarking:
+Use the Linux setup script to bootstrap the required toolchain along with optional dependencies for generating documentation and running automated tests/benchmarks:
 
 ```bash
-./.config/unix/setup.sh
+./.config/linux/setup.sh
 ```
 
-The script auto-detects Debian/Ubuntu (APT), Fedora/RHEL (DNF), Arch/Manjaro (Pacman), Alpine (APK), OpenSUSE (Zypper), Gentoo (Emerge) or macOS (Homebrew) environments and prompts before installing anything that is missing. Explore advanced usage with `./.config/unix/setup.sh --help`:
+The script auto-detects Debian/Ubuntu (APT), Fedora/RHEL (DNF), Arch/Manjaro (Pacman), Alpine (APK), OpenSUSE (Zypper), and Gentoo (Emerge) environments. Explore advanced usage with `./.config/linux/setup.sh --help`:
 
 - `-y/--yes` enables unattended installs.
 - `-r/--required` restricts installs to the minimal build toolchain.
 - `-v/--verbose` surfaces package-manager output for troubleshooting.
+
+#### macOS
+
+The macOS setup script targets the system `zsh` shell and handles both Homebrew and Xcode Command Line Tool prerequisites before installing project dependencies:
+
+```bash
+./.config/macos/setup.sh
+```
+
+Use `./.config/macos/setup.sh --help` to see the same convenience flags for non-interactive or minimal installations.
 
 #### Windows
 

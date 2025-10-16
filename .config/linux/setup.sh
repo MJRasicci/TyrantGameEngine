@@ -25,7 +25,7 @@ REQUIRED_ONLY=0
 
 print_help() {
   cat <<EOF
-${BOLD}Tyrant Game Engine Dependency Setup${RESET}
+${BOLD}Tyrant Game Engine Linux Dependency Setup${RESET}
 
 ${BOLD}Usage:${RESET}  $(basename "$0") [options]
 
@@ -36,8 +36,7 @@ ${BOLD}Options:${RESET}
   -r, --required    Only install required packages (skip docs & test/benchmark deps)
 
 ${BOLD}Required dependencies:${RESET}
-  * GCC (Linux only)
-  * Xcode Command-Line Tools (macOS only)
+  * GCC / Clang toolchain (via distro meta-packages)
   * ninja
   * cmake
 
@@ -68,7 +67,7 @@ done
 # --------------------------- Environment detection ---------------------------
 OS="$(uname -s || true)"
 
-PM=""             # Package manager binary name (apt-get, dnf, brew, pacman, ...)
+PM=""             # Package manager binary name (apt-get, dnf, pacman, ...)
 PM_NAME=""        # Human-readable name for logs
 PM_SUDO="sudo"    # Prefix for privileged invocations
 PM_Y_FLAG=""      # Package-manager specific "assume yes" flag
@@ -81,14 +80,6 @@ command_exists() { command -v "$1" >/dev/null 2>&1; }
 set_pm_config() {
   # Configure per-package-manager execution details.
   case "$PM" in
-    brew)
-      PM_NAME="Homebrew"
-      PM_SUDO=""
-      PM_INSTALL_CMD="brew install"
-      PM_Y_FLAG=""
-      PM_QUIET_FLAGS=""
-      PM_UPDATE_CMD="brew update"
-      ;;
     apt-get)
       PM_NAME="APT (Debian/Ubuntu)"
       PM_INSTALL_CMD="apt-get install"
@@ -143,9 +134,8 @@ set_pm_config() {
 
 detect_platform() {
   if [[ "$OS" == "Darwin" ]]; then
-    PM="brew"
-    set_pm_config
-    return
+    err "This script targets Linux environments. Use .config/macos/setup.sh on macOS."
+    exit 3
   fi
 
   if [[ -f /etc/os-release ]]; then
@@ -160,7 +150,7 @@ detect_platform() {
     fi
   done
 
-  err "Unsupported platform. This script supports apt, dnf, pacman, zypper, apk, emerge, and Homebrew."
+  err "Unsupported platform. This script supports apt, dnf, pacman, zypper, apk, and emerge."
   note "Tip: extend this script by adding new package metadata in the maps and updating detect_platform()."
   exit 3
 }
@@ -192,9 +182,6 @@ OPT_MAP[apk]="doxygen graphviz gtest benchmark"
 
 REQ_MAP[emerge]="sys-devel/gcc dev-build/ninja dev-build/cmake"
 OPT_MAP[emerge]="app-text/doxygen media-gfx/graphviz dev-cpp/gtest dev-cpp/benchmark"
-
-REQ_MAP[brew]="cmake ninja"
-OPT_MAP[brew]="doxygen graphviz googletest google-benchmark"
 
 # --------------------------- Version detection helpers ---------------------------
 pkg_version_apt() {
@@ -230,12 +217,6 @@ gentoo_pkg_version() {
   [[ -n "$match" ]] || return 0
   match="$(basename "$match")"
   echo "${match#${name}-}"
-}
-
-brew_version() {
-  local formula="$1"
-  # e.g. "cmake 3.30.2" possibly with multiple versions
-  brew list --versions "$formula" 2>/dev/null | awk '{print $2}'
 }
 
 tool_version() {
@@ -290,13 +271,6 @@ probe_version_for_logical() {
     build-base)
       echo "(meta-package for Alpine build toolchain)"
       ;;
-    xcode-clt)
-      # Presence implies Clang tools; show clang version if available
-      if command_exists clang; then tool_version clang; else echo "installed"; fi
-      ;;
-    homebrew)
-      brew --version 2>/dev/null | head -n1 | awk '{print $2}'
-      ;;
     *)
       ;;
   esac
@@ -331,59 +305,6 @@ else
   ALL_PKGS=("${REQ_PKGS[@]}" "${OPT_PKGS[@]}")
 fi
 
-# --------------------------- macOS prerequisites ---------------------------
-ensure_macos_prereqs() {
-  local need_brew=0 need_xcode=0
-  if [[ "$OS" != "Darwin" ]]; then return 0; fi
-
-  # Xcode Command Line Tools
-  if xcode-select -p >/dev/null 2>&1; then
-    ok "Xcode Command Line Tools: present"
-  else
-    need_xcode=1
-    warn "Xcode Command Line Tools: missing"
-    if [[ "$ASSUME_YES" -eq 1 ]]; then
-      info "Attempting to trigger Xcode CLT install (GUI may prompt)..."
-      xcode-select --install || true
-      info "After CLT completes, re-run this script if compilers aren't available yet."
-    else
-      read -r -p "Install Xcode Command Line Tools now? [Y/n] " ans
-      ans="${ans:-Y}"
-      if [[ "$ans" =~ ^[Yy]$ ]]; then
-        xcode-select --install || true
-        info "Installation initiated (GUI). Re-run if needed after completion."
-      else
-        warn "Skipping Xcode CLT install; required compilers may be missing."
-      fi
-    fi
-  fi
-
-  # Homebrew
-  if command_exists brew; then
-    ok "Homebrew: present ($(probe_version_for_logical homebrew))"
-  else
-    need_brew=1
-    warn "Homebrew: missing"
-    if [[ "$ASSUME_YES" -eq 1 ]]; then
-      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    else
-      read -r -p "Install Homebrew now? [Y/n] " ans
-      ans="${ans:-Y}"
-      if [[ "$ans" =~ ^[Yy]$ ]]; then
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-      else
-        err "Homebrew is required to install dependencies on macOS."
-      fi
-    fi
-    # Try to add brew to PATH for this session if needed
-    if [[ -x /opt/homebrew/bin/brew ]]; then
-      eval "$(/opt/homebrew/bin/brew shellenv)"
-    elif [[ -x /usr/local/bin/brew ]]; then
-      eval "$(/usr/local/bin/brew shellenv)"
-    fi
-  fi
-}
-
 # --------------------------- Package audit ---------------------------
 PKG_STATUS=()   # lines for table
 MISSING_PKGS=() # package ids to install
@@ -405,50 +326,6 @@ is_pkg_installed() {
       ;;
     emerge)
       gentoo_is_installed "$pkg"
-      ;;
-    brew)
-      # Homebrew first
-      if brew list --versions "$pkg" >/dev/null 2>&1; then
-        return 0
-      fi
-
-      # Fallbacks for non-brew installs on macOS
-      case "$pkg" in
-        cmake)
-          command -v cmake >/dev/null 2>&1
-          return $?
-          ;;
-        ninja)
-          command -v ninja >/dev/null 2>&1
-          return $?
-          ;;
-        doxygen)
-          command -v doxygen >/dev/null 2>&1
-          return $?
-          ;;
-        graphviz)
-          # Graphviz exposes 'dot'
-          command -v dot >/dev/null 2>&1
-          return $?
-          ;;
-        googletest|googletest@*)
-          # Heuristic: presence via pkg-config (MacPorts/source installs often expose this)
-          if command -v pkg-config >/dev/null 2>&1; then
-            pkg-config --exists gtest 2>/dev/null && return 0
-            pkg-config --exists gtest_main 2>/dev/null && return 0
-          fi
-          return 1
-          ;;
-        google-benchmark|google-benchmark@*|benchmark)
-          if command -v pkg-config >/dev/null 2>&1; then
-            pkg-config --exists benchmark 2>/dev/null && return 0
-          fi
-          return 1
-          ;;
-        *)
-          return 1
-          ;;
-      esac
       ;;
     *)
       return 1
@@ -474,17 +351,6 @@ pkg_version() {
     emerge)
       gentoo_pkg_version "$pkg"
       ;;
-    brew)
-      # Prefer Homebrew metadata; if not installed via brew, fall back to tool probe and tag it.
-      local v
-      v="$(brew_version "$pkg")"
-      if [[ -n "$v" ]]; then
-        echo "$v"
-      else
-        v="$(probe_version_for_logical "$pkg")"
-        [[ -n "$v" ]] && echo "$v [non-brew]"
-      fi
-      ;;
     *)
       echo ""
       ;;
@@ -499,23 +365,6 @@ audit_packages() {
   title "Dependency Audit (${PM_NAME})"
   printf "%-26s | %-10s | %s\n" "Package" "Status" "Version/Details"
   bar
-
-  # macOS special "logical" checks for nicer versions
-  if [[ "$OS" == "Darwin" ]]; then
-    # Show Xcode CLT status
-    if xcode-select -p >/dev/null 2>&1; then
-      printf "%-26s | %s%-10s%s | %s\n" "xcode-commandline-tools" "$GREEN" "present" "$RESET" "$(probe_version_for_logical xcode-clt)"
-    else
-      printf "%-26s | %s%-10s%s | %s\n" "xcode-commandline-tools" "$RED" "missing" "$RESET" "-"
-    fi
-    # Show Homebrew line
-    if command_exists brew; then
-      printf "%-26s | %s%-10s%s | %s\n" "homebrew" "$GREEN" "present" "$RESET" "$(probe_version_for_logical homebrew)"
-    else
-      printf "%-26s | %s%-10s%s | %s\n" "homebrew" "$RED" "missing" "$RESET" "-"
-    fi
-    bar
-  fi
 
   for pkg in "${ALL_PKGS[@]}"; do
     local status="missing" color="$RED" ver="-"
@@ -598,12 +447,8 @@ install_missing() {
 }
 
 # --------------------------- Main ---------------------------
-title "Tyrant Game Engine Dependency Setup"
+title "Tyrant Game Engine Linux Dependency Setup"
 info "Platform: ${OS}; Package Manager: ${PM_NAME}"
-
-if [[ "$OS" == "Darwin" ]]; then
-  ensure_macos_prereqs
-fi
 
 audit_packages
 if [[ ${#MISSING_PKGS[@]} -gt 0 ]]; then
