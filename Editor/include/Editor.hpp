@@ -1,15 +1,15 @@
 #pragma once
 
-#include "Core.hpp"
-#include <iostream>
+#include "Logging/Logger.hpp"
+#include <memory>
 
 class Editor
 {
 public:
     void Run()
     {
-        Engine engine;
-        engine.Startup();
-        std::cout << "Editor Running..." << std::endl;
+        auto globalLogger = std::make_shared<TGE::GlobalLogger>();
+        auto logger = std::make_shared<TGE::Logger<Editor>>(globalLogger);
+        logger->Info("Starting Editor...");
     }
 };
