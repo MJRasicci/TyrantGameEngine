@@ -2,7 +2,7 @@
  * @file LogLevel.hpp
  * @brief Defines the LogLevel enumeration and associated utilities.
  *
- * This file contains the LogLevel enum class, which is used throughout the Tyrant
+ * This file contains the LogLevel enum class, which is used throughout the Tyrant Game Engine
  * system for controlling and categorizing log output levels. Additionally, it
  * includes utility functions and operators for working with LogLevel values.
  */
@@ -13,6 +13,8 @@
 #include <string>
 #include <iosfwd>
 #include <string_view>
+#include <format>
+#include <utility>
 #include "Export.hpp"
 
 namespace TGE {
@@ -121,36 +123,31 @@ inline LogLevel FromString(const std::string_view str) noexcept
 //===========================================================================//
 
 /**
- * @brief Less than operator for LogLevel.
- * @param lhs Left-hand side LogLevel for comparison.
- * @param rhs Right-hand side LogLevel for comparison.
- * @return constexpr bool True if lhs is lower severity than rhs.
+ * @brief Compares two LogLevel values using the C++20 three-way comparison.
+ *
+ * Provides a total ordering between LogLevel values based on their underlying
+ * integer representation. This enables use of all standard comparison operators
+ * (<, <=, >, >=, ==, !=) without needing to explicitly overload each one.
+ *
+ * Example:
+ * @code
+ * if (logLevelA < logLevelB) {
+ *     // ...
+ * }
+ * @endcode
+ *
+ * @param a The left-hand side LogLevel.
+ * @param b The right-hand side LogLevel.
+ * @return std::strong_ordering
+ *         - std::strong_ordering::less if a < b
+ *         - std::strong_ordering::equal if a == b
+ *         - std::strong_ordering::greater if a > b
  */
-TGE_API constexpr bool operator<(LogLevel lhs, LogLevel rhs) noexcept;
-
-/**
- * @brief Greater than operator for LogLevel.
- * @param lhs Left-hand side LogLevel for comparison.
- * @param rhs Right-hand side LogLevel for comparison.
- * @return constexpr bool True if lhs is higher severity than rhs.
- */
-TGE_API constexpr bool operator>(LogLevel lhs, LogLevel rhs) noexcept;
-
-/**
- * @brief Less than or equal to operator for LogLevel.
- * @param lhs Left-hand side LogLevel for comparison.
- * @param rhs Right-hand side LogLevel for comparison.
- * @return constexpr bool True if lhs is lower severity or equal to rhs.
- */
-TGE_API constexpr bool operator<=(LogLevel lhs, LogLevel rhs) noexcept;
-
-/**
- * @brief Greater than or equal to operator for LogLevel.
- * @param lhs Left-hand side LogLevel for comparison.
- * @param rhs Right-hand side LogLevel for comparison.
- * @return constexpr bool True if lhs is higher severity or equal to rhs.
- */
-TGE_API constexpr bool operator>=(LogLevel lhs, LogLevel rhs) noexcept;
+[[nodiscard]] constexpr std::strong_ordering
+operator<=>(LogLevel a, LogLevel b) noexcept
+{
+    return std::to_underlying(a) <=> std::to_underlying(b);
+}
 
 //===========================================================================//
 //=======> LogLevel Stream Overload and Utilities <==========================//
@@ -162,20 +159,33 @@ TGE_API constexpr bool operator>=(LogLevel lhs, LogLevel rhs) noexcept;
  * @param level The LogLevel to output.
  * @return std::ostream& The modified output stream.
  */
-TGE_API std::ostream& operator<<(std::ostream& os, LogLevel level);
-
-/**
- * @brief Gets the next higher LogLevel.
- * @param level The current LogLevel.
- * @return constexpr LogLevel The next higher LogLevel.
- */
-TGE_API constexpr LogLevel NextLevel(LogLevel level) noexcept;
-
-/**
- * @brief Gets the previous lower LogLevel.
- * @param level The current LogLevel.
- * @return constexpr LogLevel The previous lower LogLevel.
- */
-TGE_API constexpr LogLevel PreviousLevel(LogLevel level) noexcept;
+inline std::ostream& operator<<(std::ostream& os, LogLevel level)
+{
+    return os << ToString(level);
+}
 
 } // namespace TGE
+
+/**
+ * @struct std::formatter<TGE::LogLevel>
+ * @brief Enables `std::format("{:}", level)` with colorized text for `TGE::LogLevel`.
+ * @details
+ * Delegates to `TGE::ToColorizedString(level)` and then formats as `std::string_view`.
+ */
+template<>
+struct std::formatter<TGE::LogLevel> : std::formatter<string_view>
+{
+    /**
+     * @brief Format a `TGE::LogLevel` as a colorized string.
+     * @param level The log level to format.
+     * @param ctx   The output format context.
+     * @return An iterator to the end of the formatted output.
+     * @throws (none) This function does not throw unless the underlying formatter does.
+     */
+    auto format(const TGE::LogLevel level, std::format_context& ctx) const
+    {
+        std::string temp;
+        std::format_to(std::back_inserter(temp), "{}", TGE::ToColorizedString(level));
+        return std::formatter<std::string_view>::format(temp, ctx);
+    }
+};
