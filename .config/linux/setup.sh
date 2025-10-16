@@ -27,12 +27,12 @@ print_help() {
   cat <<EOF
 ${BOLD}Tyrant Game Engine Linux Dependency Setup${RESET}
 
-${BOLD}Usage:${RESET}  $(basename "$0") [options]
+${BOLD}Usage:${RESET}  setup.sh [options]
 
 ${BOLD}Options:${RESET}
   -h, --help        Show this help and exit
   -v, --verbose     Show command output (default is quiet)
-  -y, --yes         Non-interactive: skip confirmation prompt (installs always auto-confirm)
+  -y, --yes         Non-interactive: skip confirmation prompt before installing packages
   -r, --required    Only install required packages (skip docs & test/benchmark deps)
 
 ${BOLD}Required dependencies:${RESET}
@@ -47,9 +47,9 @@ ${BOLD}Optional dependencies:${RESET}
   * Google Benchmark
 
 ${BOLD}Examples:${RESET}
-  $(basename "$0") -y              # Install everything non-interactively
-  $(basename "$0") -r              # Only required toolchain & build tools
-  $(basename "$0") -v -y           # Non-interactive and verbose
+  setup.sh -y              # Install everything non-interactively
+  setup.sh -r              # Only required toolchain & build tools
+  setup.sh -v -y           # Non-interactive and verbose
 EOF
 }
 

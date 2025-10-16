@@ -28,7 +28,7 @@ print_help() {
   cat <<EOF
 ${BOLD}Tyrant Game Engine macOS Dependency Setup${RESET}
 
-${BOLD}Usage:${RESET}  $(basename "$0") [options]
+${BOLD}Usage:${RESET}  setup.sh [options]
 
 ${BOLD}Options:${RESET}
   -h, --help        Show this help and exit
@@ -49,9 +49,9 @@ ${BOLD}Optional dependencies:${RESET}
   * Google Benchmark
 
 ${BOLD}Examples:${RESET}
-  $(basename "$0") -y              # Install everything non-interactively
-  $(basename "$0") -r              # Only required build tools
-  $(basename "$0") -v -y           # Non-interactive and verbose
+  setup.sh -y              # Install everything non-interactively
+  setup.sh -r              # Only required build tools
+  setup.sh -v -y           # Non-interactive and verbose
 EOF
 }
 
