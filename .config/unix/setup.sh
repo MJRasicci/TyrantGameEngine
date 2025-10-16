@@ -1,55 +1,22 @@
 #!/usr/bin/env bash
-# setup.sh — Cross-platform dependency bootstrap (Linux/macOS package managers)
-#
-# Newly supported managers (2024-10 update): pacman (Arch/Manjaro), zypper (openSUSE),
-# apk (Alpine) and emerge (Gentoo/Portage). The script is intentionally modular so that
-# future platforms can hook into the detection and package metadata maps with minimal
-# repetition.
-# Usage: ./setup.sh [-h|--help] [-v|--verbose] [-y|--yes] [-r|--required]
-#
-# Required deps:
-#   Debian/Ubuntu (apt):       build-essential, ninja-build, cmake
-#   RHEL/Fedora (dnf):         gcc, gcc-c++, ninja-build, cmake
-#   Arch/Manjaro (pacman):     base-devel, ninja, cmake
-#   openSUSE (zypper):         gcc, gcc-c++, ninja, cmake
-#   Alpine (apk):              build-base, ninja, cmake
-#   Gentoo/Portage (emerge):   sys-devel/gcc, dev-util/ninja, dev-util/cmake
-#   macOS (brew):              xcode-select (CLT), cmake, ninja
-#
-# Optional deps:
-#   Debian/Ubuntu (apt):       doxygen, graphviz, libgtest-dev, libbenchmark-dev
-#   RHEL/Fedora (dnf):         doxygen, graphviz, gtest-devel, google-benchmark-devel
-#   Arch/Manjaro (pacman):     doxygen, graphviz, gtest, benchmark
-#   openSUSE (zypper):         doxygen, graphviz, gtest, benchmark
-#   Alpine (apk):              doxygen, graphviz, gtest, benchmark
-#   Gentoo/Portage (emerge):   app-doc/doxygen, media-gfx/graphviz,
-#                              dev-cpp/gtest, dev-cpp/benchmark
-#   macOS (brew):              doxygen, graphviz, googletest, google-benchmark
-#
-# Behavior:
-#   - Detects platform & package manager
-#   - Prints a well-formatted audit with versions (where discoverable)
-#   - Prompts (or auto-confirms with -y) to install missing
-#   - Quiet by default; -v shows command output
-#   - Extensible: add more platforms by implementing the *_pkgs maps
 
 set -uo pipefail
 
 # --------------------------- Styling ---------------------------
-if [[ -t 1 ]]; then
+if [[ -t 1 ]] && [[ -n "${TERM:-}" && "${TERM}" != "dumb" ]] && command -v tput >/dev/null 2>&1 && [[ -z "${NO_COLOR:-}" ]]; then
   BOLD="$(tput bold)"; DIM="$(tput dim)"; RESET="$(tput sgr0)"
   GREEN="$(tput setaf 2)"; YELLOW="$(tput setaf 3)"; RED="$(tput setaf 1)"; CYAN="$(tput setaf 6)"; BLUE="$(tput setaf 4)"
 else
   BOLD=""; DIM=""; RESET=""; GREEN=""; YELLOW=""; RED=""; CYAN=""; BLUE=""
 fi
 
-bar() { printf "%s\n" "${DIM}────────────────────────────────────────────────────────────────────────────${RESET}"; }
+bar()   { printf "%s\n" "${DIM}────────────────────────────────────────────────────────────────────────────${RESET}"; }
 title() { bar; printf "%s%s%s\n" "$BOLD" "$1" "$RESET"; bar; }
-note() { printf "%s%s%s\n" "$DIM" "$1" "$RESET"; }
-ok()   { printf "%s✓%s %s\n" "$GREEN" "$RESET" "$1"; }
-warn() { printf "%s•%s %s\n" "$YELLOW" "$RESET" "$1"; }
-err()  { printf "%s✗%s %s\n" "$RED" "$RESET" "$1"; }
-info() { printf "%sℹ%s %s\n" "$CYAN" "$RESET" "$1"; }
+note()  { printf "%s%s%s\n" "$DIM" "$1" "$RESET"; }
+ok()    { printf "%s✓%s %s\n" "$GREEN" "$RESET" "$1"; }
+warn()  { printf "%s•%s %s\n" "$YELLOW" "$RESET" "$1"; }
+err()   { printf "%s✗%s %s\n" "$RED" "$RESET" "$1"; }
+info()  { printf "%sℹ%s %s\n" "$CYAN" "$RESET" "$1"; }
 
 # --------------------------- CLI parsing ---------------------------
 VERBOSE=0
@@ -69,12 +36,16 @@ ${BOLD}Options:${RESET}
   -r, --required    Only install required packages (skip docs & test/benchmark deps)
 
 ${BOLD}Required dependencies:${RESET}
-  Debian/Ubuntu: build-essential, ninja-build, cmake
-  RHEL/Fedora:   gcc, gcc-c++, ninja-build, cmake
-  macOS (brew):  Xcode CLT, cmake, ninja
+  * GCC (Linux only)
+  * Xcode Command-Line Tools (macOS only)
+  * ninja
+  * cmake
 
 ${BOLD}Optional dependencies:${RESET}
-  doxygen, graphviz, gtest/googletest, google-benchmark
+  * Doxygen
+  * Graphviz
+  * GTest
+  * Google Benchmark
 
 ${BOLD}Examples:${RESET}
   $(basename "$0") -y              # Install everything non-interactively
@@ -136,7 +107,11 @@ set_pm_config() {
       PM_INSTALL_CMD="pacman -S --needed"
       PM_Y_FLAG="--noconfirm"
       PM_QUIET_FLAGS="--noprogressbar --quiet"
-      # Intentionally omit automatic `pacman -Sy` to avoid partial upgrades; leave sync to user.
+      if [[ "$ASSUME_YES" -eq 1 ]]; then
+        PM_UPDATE_CMD="pacman -Syu --noconfirm"
+      else
+        PM_UPDATE_CMD="pacman -Syu"
+      fi
       ;;
     zypper)
       PM_NAME="Zypper (openSUSE)"
@@ -198,14 +173,6 @@ if [[ ${EUID:-$(id -u)} -eq 0 ]] || ! command_exists sudo; then
 fi
 
 # --------------------------- Dependency maps ---------------------------
-# Logical dependency names -> platform package IDs and version probes
-
-# On Linux, compilers:
-#   - Debian: build-essential meta-package; version via dpkg -s
-#   - RHEL:   gcc/gcc-c++; versions via rpm -q
-# On macOS: compiler via Xcode CLT
-
-# Logical -> (pkg ids)
 declare -A REQ_MAP OPT_MAP
 
 REQ_MAP[apt-get]="build-essential ninja-build cmake"
@@ -218,13 +185,13 @@ REQ_MAP[pacman]="base-devel ninja cmake"
 OPT_MAP[pacman]="doxygen graphviz gtest benchmark"
 
 REQ_MAP[zypper]="gcc gcc-c++ ninja cmake"
-OPT_MAP[zypper]="doxygen graphviz gtest benchmark"
+OPT_MAP[zypper]="doxygen graphviz gtest benchmark-devel"
 
 REQ_MAP[apk]="build-base ninja cmake"
 OPT_MAP[apk]="doxygen graphviz gtest benchmark"
 
-REQ_MAP[emerge]="sys-devel/gcc dev-util/ninja dev-util/cmake"
-OPT_MAP[emerge]="app-doc/doxygen media-gfx/graphviz dev-cpp/gtest dev-cpp/benchmark"
+REQ_MAP[emerge]="sys-devel/gcc dev-build/ninja dev-build/cmake"
+OPT_MAP[emerge]="app-text/doxygen media-gfx/graphviz dev-cpp/gtest dev-cpp/benchmark"
 
 REQ_MAP[brew]="cmake ninja"
 OPT_MAP[brew]="doxygen graphviz googletest google-benchmark"
@@ -298,13 +265,13 @@ probe_version_for_logical() {
     build-essential|gcc|gcc-c++|sys-devel/gcc)
       if command_exists gcc; then tool_version gcc; fi
       ;;
-    ninja-build|ninja|dev-util/ninja)
+    ninja-build|ninja|dev-build/ninja)
       tool_version ninja
       ;;
-    cmake|dev-util/cmake)
+    cmake|dev-build/cmake)
       tool_version cmake
       ;;
-    doxygen|app-doc/doxygen)
+    doxygen|app-text/doxygen)
       tool_version doxygen
       ;;
     graphviz|media-gfx/graphviz)
@@ -574,22 +541,6 @@ audit_packages() {
   fi
 }
 
-apt_update_if_needed() {
-  # Run apt-get update before installs to avoid stale/missing indexes (typical in CI).
-  # Respects -v (verbose) and -y (non-interactive) flags from the script.
-
-  # Non-interactive env prevents tzdata and friends from prompting in CI.
-  if [[ "$ASSUME_YES" -eq 1 ]]; then
-    export DEBIAN_FRONTEND=noninteractive
-  fi
-
-  if [[ "$VERBOSE" -eq 1 ]]; then
-    $PM_SUDO apt-get update
-  else
-    $PM_SUDO apt-get update -qq >/dev/null 2>&1
-  fi
-}
-
 # --------------------------- Installer ---------------------------
 install_missing() {
   [[ ${#MISSING_PKGS[@]} -eq 0 ]] && return 0
@@ -609,13 +560,26 @@ install_missing() {
   local yflag="" qflags=""
   [[ "$ASSUME_YES" -eq 1 ]] && yflag="$PM_Y_FLAG"
 
-  if [[ -n "$PM_UPDATE_CMD" && "$PM" == "apt-get" ]]; then
-    # apt requires metadata refresh to avoid "package not found" errors on fresh machines.
-    apt_update_if_needed
-  elif [[ -n "$PM_UPDATE_CMD" && "$VERBOSE" -eq 1 ]]; then
+  # Run package metadata refresh if required
+  if [[ -n "$PM_UPDATE_CMD" && "$VERBOSE" -eq 1 ]]; then
     $PM_SUDO $PM_UPDATE_CMD
   elif [[ -n "$PM_UPDATE_CMD" ]]; then
     $PM_SUDO $PM_UPDATE_CMD >/dev/null 2>&1 || true
+  fi
+
+  # Gentoo-specific preflight to ensure proper feature flags for graphviz dependencies
+  if [[ "$PM" == "emerge" ]]; then
+    # Ensure Portage is synced enough to resolve
+    eselect news read new || true
+    emerge-webrsync || true
+    emaint sync -a || true
+
+    # Satisfy graphviz -> gd USE requirements
+    mkdir -p /etc/portage/package.use
+    # Keep it idempotent: append only if not present
+    if ! grep -q '^media-libs/gd ' /etc/portage/package.use/tge 2>/dev/null; then
+      echo 'media-libs/gd fontconfig truetype' >> /etc/portage/package.use/tge
+    fi
   fi
 
   if [[ "$VERBOSE" -eq 1 ]]; then
