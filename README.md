@@ -44,21 +44,21 @@ Optional tooling:
 
 #### Linux & macOS
 
-Use the provided setup script to bootstrap the required toolchain along with optional documentation, testing, and benchmarking dependencies:
+Use the provided setup script to bootstrap the required toolchain along with optional dependencies for generating documentation as well as performing automated testing and benchmarking:
 
 ```bash
 ./.config/unix/setup.sh
 ```
 
-The script auto-detects Debian/Ubuntu (APT), Fedora/RHEL (DNF), or macOS (Homebrew) environments and prompts before installing anything that is missing. Explore advanced usage with `./.config/unix/setup.sh --help`:
+The script auto-detects Debian/Ubuntu (APT), Fedora/RHEL (DNF), Arch/Manjaro (Pacman), Alpine (APK), OpenSUSE (Zypper), Gentoo (Emerge) or macOS (Homebrew) environments and prompts before installing anything that is missing. Explore advanced usage with `./.config/unix/setup.sh --help`:
 
 - `-y/--yes` enables unattended installs.
 - `-r/--required` restricts installs to the minimal build toolchain.
 - `-v/--verbose` surfaces package-manager output for troubleshooting.
 
-> **Note:** On macOS the setup script also validates the Xcode Command Line Tools and installs Homebrew packages for optional tooling such as Doxygen, Graphviz, GoogleTest, and Google Benchmark.
-
 #### Windows
+
+You can use our winget configuration to automatically download all required tools for Windows (execute in an elevated powershell session):
 
 ```powershell
 winget configure -f ./.config/windows/configuration.winget
