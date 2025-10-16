@@ -52,7 +52,7 @@ Use the Linux setup script to bootstrap the required toolchain along with option
 
 The script auto-detects Debian/Ubuntu (APT), Fedora/RHEL (DNF), Arch/Manjaro (Pacman), Alpine (APK), OpenSUSE (Zypper), and Gentoo (Emerge) environments. Explore advanced usage with `./.config/linux/setup.sh --help`:
 
-- `-y/--yes` enables unattended installs.
+- `-y/--yes` skips the confirmation prompt (installs already auto-confirm with the package manager).
 - `-r/--required` restricts installs to the minimal build toolchain.
 - `-v/--verbose` surfaces package-manager output for troubleshooting.
 

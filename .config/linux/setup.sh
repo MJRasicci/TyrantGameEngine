@@ -32,7 +32,7 @@ ${BOLD}Usage:${RESET}  $(basename "$0") [options]
 ${BOLD}Options:${RESET}
   -h, --help        Show this help and exit
   -v, --verbose     Show command output (default is quiet)
-  -y, --yes         Non-interactive: auto-confirm all prompts and pass -y to the package manager
+  -y, --yes         Non-interactive: skip confirmation prompt (installs always auto-confirm)
   -r, --required    Only install required packages (skip docs & test/benchmark deps)
 
 ${BOLD}Required dependencies:${RESET}
@@ -98,11 +98,7 @@ set_pm_config() {
       PM_INSTALL_CMD="pacman -S --needed"
       PM_Y_FLAG="--noconfirm"
       PM_QUIET_FLAGS="--noprogressbar --quiet"
-      if [[ "$ASSUME_YES" -eq 1 ]]; then
-        PM_UPDATE_CMD="pacman -Syu --noconfirm"
-      else
-        PM_UPDATE_CMD="pacman -Syu"
-      fi
+      PM_UPDATE_CMD="pacman -Syu --noconfirm"
       ;;
     zypper)
       PM_NAME="Zypper (openSUSE)"
@@ -406,8 +402,7 @@ install_missing() {
 
   title "Installing Missing Packages"
 
-  local yflag="" qflags=""
-  [[ "$ASSUME_YES" -eq 1 ]] && yflag="$PM_Y_FLAG"
+  local yflag="$PM_Y_FLAG" qflags=""
 
   # Run package metadata refresh if required
   if [[ -n "$PM_UPDATE_CMD" && "$VERBOSE" -eq 1 ]]; then
