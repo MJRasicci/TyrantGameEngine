@@ -1,41 +1,22 @@
 #!/usr/bin/env bash
-# setup.sh — Cross-platform dependency bootstrap (Debian/Ubuntu, RHEL/Fedora, macOS)
-# Usage: ./setup.sh [-h|--help] [-v|--verbose] [-y|--yes] [-r|--required]
-#
-# Required deps:
-#   Debian/Ubuntu: build-essential, ninja-build, cmake
-#   RHEL/Fedora:   gcc, gcc-c++, ninja-build, cmake
-#   macOS (brew):  xcode-select (CLT), cmake, ninja
-#
-# Optional deps:
-#   Debian/Ubuntu: doxygen, graphviz, libgtest-dev, libbenchmark-dev
-#   RHEL/Fedora:   doxygen, graphviz, gtest-devel, google-benchmark-devel
-#   macOS (brew):  doxygen, graphviz, googletest, google-benchmark
-#
-# Behavior:
-#   - Detects platform & package manager
-#   - Prints a well-formatted audit with versions (where discoverable)
-#   - Prompts (or auto-confirms with -y) to install missing
-#   - Quiet by default; -v shows command output
-#   - Extensible: add more platforms by implementing the *_pkgs maps
 
 set -uo pipefail
 
 # --------------------------- Styling ---------------------------
-if [[ -t 1 ]]; then
+if [[ -t 1 ]] && [[ -n "${TERM:-}" && "${TERM}" != "dumb" ]] && command -v tput >/dev/null 2>&1 && [[ -z "${NO_COLOR:-}" ]]; then
   BOLD="$(tput bold)"; DIM="$(tput dim)"; RESET="$(tput sgr0)"
   GREEN="$(tput setaf 2)"; YELLOW="$(tput setaf 3)"; RED="$(tput setaf 1)"; CYAN="$(tput setaf 6)"; BLUE="$(tput setaf 4)"
 else
   BOLD=""; DIM=""; RESET=""; GREEN=""; YELLOW=""; RED=""; CYAN=""; BLUE=""
 fi
 
-bar() { printf "%s\n" "${DIM}────────────────────────────────────────────────────────────────────────────${RESET}"; }
+bar()   { printf "%s\n" "${DIM}────────────────────────────────────────────────────────────────────────────${RESET}"; }
 title() { bar; printf "%s%s%s\n" "$BOLD" "$1" "$RESET"; bar; }
-note() { printf "%s%s%s\n" "$DIM" "$1" "$RESET"; }
-ok()   { printf "%s✓%s %s\n" "$GREEN" "$RESET" "$1"; }
-warn() { printf "%s•%s %s\n" "$YELLOW" "$RESET" "$1"; }
-err()  { printf "%s✗%s %s\n" "$RED" "$RESET" "$1"; }
-info() { printf "%sℹ%s %s\n" "$CYAN" "$RESET" "$1"; }
+note()  { printf "%s%s%s\n" "$DIM" "$1" "$RESET"; }
+ok()    { printf "%s✓%s %s\n" "$GREEN" "$RESET" "$1"; }
+warn()  { printf "%s•%s %s\n" "$YELLOW" "$RESET" "$1"; }
+err()   { printf "%s✗%s %s\n" "$RED" "$RESET" "$1"; }
+info()  { printf "%sℹ%s %s\n" "$CYAN" "$RESET" "$1"; }
 
 # --------------------------- CLI parsing ---------------------------
 VERBOSE=0
@@ -55,12 +36,16 @@ ${BOLD}Options:${RESET}
   -r, --required    Only install required packages (skip docs & test/benchmark deps)
 
 ${BOLD}Required dependencies:${RESET}
-  Debian/Ubuntu: build-essential, ninja-build, cmake
-  RHEL/Fedora:   gcc, gcc-c++, ninja-build, cmake
-  macOS (brew):  Xcode CLT, cmake, ninja
+  * GCC (Linux only)
+  * Xcode Command-Line Tools (macOS only)
+  * ninja
+  * cmake
 
 ${BOLD}Optional dependencies:${RESET}
-  doxygen, graphviz, gtest/googletest, google-benchmark
+  * Doxygen
+  * Graphviz
+  * GTest
+  * Google Benchmark
 
 ${BOLD}Examples:${RESET}
   $(basename "$0") -y              # Install everything non-interactively
@@ -83,57 +68,133 @@ done
 # --------------------------- Environment detection ---------------------------
 OS="$(uname -s || true)"
 
-PM=""             # apt-get | dnf | brew (macOS uses brew + Xcode CLT)
-PM_NAME=""        # Human-readable
-PM_SUDO="sudo"    # will prefix installs
-PM_Y_FLAG="-y"
-PM_QUIET_FLAGS=""
-PM_INSTALL_CMD=""
+PM=""             # Package manager binary name (apt-get, dnf, brew, pacman, ...)
+PM_NAME=""        # Human-readable name for logs
+PM_SUDO="sudo"    # Prefix for privileged invocations
+PM_Y_FLAG=""      # Package-manager specific "assume yes" flag
+PM_QUIET_FLAGS="" # Flags that silence installer output
+PM_INSTALL_CMD="" # Actual install subcommand (e.g. "apt-get install")
+PM_UPDATE_CMD=""  # Optional metadata refresh command (e.g. "apt-get update")
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
-if [[ "$OS" == "Darwin" ]]; then
-  PM="brew"; PM_NAME="Homebrew"
-  PM_SUDO=""         # brew doesn't need sudo for standard prefix
-  PM_Y_FLAG=""       # not applicable
-  PM_QUIET_FLAGS=""  # brew is reasonably chatty; we’ll control via redirection
-  PM_INSTALL_CMD="brew install"
-elif [[ -f /etc/os-release ]]; then
-  . /etc/os-release
-  if command_exists apt-get; then
-    PM="apt-get"; PM_NAME="APT (Debian/Ubuntu)"
-    PM_QUIET_FLAGS="-qq"
-    PM_INSTALL_CMD="apt-get install"
-  elif command_exists dnf; then
-    PM="dnf"; PM_NAME="DNF (RHEL/Fedora)"
-    PM_QUIET_FLAGS="-q"
-    PM_INSTALL_CMD="dnf install"
-  fi
-fi
+set_pm_config() {
+  # Configure per-package-manager execution details.
+  case "$PM" in
+    brew)
+      PM_NAME="Homebrew"
+      PM_SUDO=""
+      PM_INSTALL_CMD="brew install"
+      PM_Y_FLAG=""
+      PM_QUIET_FLAGS=""
+      PM_UPDATE_CMD="brew update"
+      ;;
+    apt-get)
+      PM_NAME="APT (Debian/Ubuntu)"
+      PM_INSTALL_CMD="apt-get install"
+      PM_Y_FLAG="-y"
+      PM_QUIET_FLAGS="-qq"
+      PM_UPDATE_CMD="apt-get update"
+      ;;
+    dnf)
+      PM_NAME="DNF (RHEL/Fedora)"
+      PM_INSTALL_CMD="dnf install"
+      PM_Y_FLAG="-y"
+      PM_QUIET_FLAGS="-q"
+      ;;
+    pacman)
+      PM_NAME="pacman (Arch/Manjaro)"
+      PM_INSTALL_CMD="pacman -S --needed"
+      PM_Y_FLAG="--noconfirm"
+      PM_QUIET_FLAGS="--noprogressbar --quiet"
+      if [[ "$ASSUME_YES" -eq 1 ]]; then
+        PM_UPDATE_CMD="pacman -Syu --noconfirm"
+      else
+        PM_UPDATE_CMD="pacman -Syu"
+      fi
+      ;;
+    zypper)
+      PM_NAME="Zypper (openSUSE)"
+      PM_INSTALL_CMD="zypper install"
+      PM_Y_FLAG="-y"
+      PM_QUIET_FLAGS="-q"
+      PM_UPDATE_CMD="zypper refresh"
+      ;;
+    apk)
+      PM_NAME="apk (Alpine)"
+      PM_INSTALL_CMD="apk add"
+      PM_Y_FLAG="--no-interactive"
+      PM_QUIET_FLAGS="-q"
+      PM_UPDATE_CMD="apk update"
+      PM_SUDO="sudo"
+      ;;
+    emerge)
+      PM_NAME="Portage (Gentoo)"
+      PM_INSTALL_CMD="emerge --quiet --noreplace"
+      PM_Y_FLAG="--ask=n"
+      PM_QUIET_FLAGS="--quiet"
+      ;;
+    *)
+      err "Unsupported package manager: $PM"
+      exit 3
+      ;;
+  esac
+}
 
-if [[ -z "$PM" ]]; then
-  err "Unsupported platform. This script supports Debian/Ubuntu (apt), RHEL/Fedora (dnf), and macOS (brew)."
-  note "Tip: extend this script by adding new package maps and a detection case in the platform section."
+detect_platform() {
+  if [[ "$OS" == "Darwin" ]]; then
+    PM="brew"
+    set_pm_config
+    return
+  fi
+
+  if [[ -f /etc/os-release ]]; then
+    . /etc/os-release
+  fi
+
+  for candidate in apt-get dnf pacman zypper apk emerge; do
+    if command_exists "$candidate"; then
+      PM="$candidate"
+      set_pm_config
+      return
+    fi
+  done
+
+  err "Unsupported platform. This script supports apt, dnf, pacman, zypper, apk, emerge, and Homebrew."
+  note "Tip: extend this script by adding new package metadata in the maps and updating detect_platform()."
   exit 3
+}
+
+detect_platform
+
+# Drop sudo prefix if already running as root or sudo is unavailable (e.g. minimal containers).
+if [[ ${EUID:-$(id -u)} -eq 0 ]] || ! command_exists sudo; then
+  PM_SUDO=""
 fi
 
 # --------------------------- Dependency maps ---------------------------
-# Logical dependency names -> platform package IDs and version probes
+declare -A REQ_MAP OPT_MAP
 
-# On Linux, compilers:
-#   - Debian: build-essential meta-package; version via dpkg -s
-#   - RHEL:   gcc/gcc-c++; versions via rpm -q
-# On macOS: compiler via Xcode CLT
+REQ_MAP[apt-get]="build-essential ninja-build cmake"
+OPT_MAP[apt-get]="doxygen graphviz libgtest-dev libbenchmark-dev"
 
-# Logical -> (pkg ids)
-REQ_DEB=( "build-essential" "ninja-build" "cmake" )
-OPT_DEB=( "doxygen" "graphviz" "libgtest-dev" "libbenchmark-dev" )
+REQ_MAP[dnf]="gcc gcc-c++ ninja-build cmake"
+OPT_MAP[dnf]="doxygen graphviz gtest-devel google-benchmark-devel"
 
-REQ_RPM=( "gcc" "gcc-c++" "ninja-build" "cmake" )
-OPT_RPM=( "doxygen" "graphviz" "gtest-devel" "google-benchmark-devel" )
+REQ_MAP[pacman]="base-devel ninja cmake"
+OPT_MAP[pacman]="doxygen graphviz gtest benchmark"
 
-REQ_BREW=( "cmake" "ninja" )
-OPT_BREW=( "doxygen" "graphviz" "googletest" "google-benchmark" )
+REQ_MAP[zypper]="gcc gcc-c++ ninja cmake"
+OPT_MAP[zypper]="doxygen graphviz gtest benchmark-devel"
+
+REQ_MAP[apk]="build-base ninja cmake"
+OPT_MAP[apk]="doxygen graphviz gtest benchmark"
+
+REQ_MAP[emerge]="sys-devel/gcc dev-build/ninja dev-build/cmake"
+OPT_MAP[emerge]="app-text/doxygen media-gfx/graphviz dev-cpp/gtest dev-cpp/benchmark"
+
+REQ_MAP[brew]="cmake ninja"
+OPT_MAP[brew]="doxygen graphviz googletest google-benchmark"
 
 # --------------------------- Version detection helpers ---------------------------
 pkg_version_apt() {
@@ -146,6 +207,29 @@ pkg_version_dnf() {
   # rpm -q returns NAME-VERSION-RELEASE... or "not installed"
   local pkg="$1"
   rpm -q --qf '%{VERSION}-%{RELEASE}\n' "$pkg" 2>/dev/null || true
+}
+
+gentoo_pkg_db="/var/db/pkg"
+
+gentoo_is_installed() {
+  # Gentoo records installed packages in /var/db/pkg/<category>/<name>-<version> directories.
+  local atom="$1"
+  [[ "$atom" == */* ]] || return 1
+  local category="${atom%/*}"
+  local name="${atom##*/}"
+  compgen -G "${gentoo_pkg_db}/${category}/${name}-*" >/dev/null 2>&1
+}
+
+gentoo_pkg_version() {
+  local atom="$1"
+  [[ "$atom" == */* ]] || return 0
+  local category="${atom%/*}"
+  local name="${atom##*/}"
+  local match
+  match="$(compgen -G "${gentoo_pkg_db}/${category}/${name}-*" | head -n1)"
+  [[ -n "$match" ]] || return 0
+  match="$(basename "$match")"
+  echo "${match#${name}-}"
 }
 
 brew_version() {
@@ -178,27 +262,33 @@ tool_version() {
 probe_version_for_logical() {
   local logical="$1"
   case "$logical" in
-    build-essential|gcc|gcc-c++)
+    build-essential|gcc|gcc-c++|sys-devel/gcc)
       if command_exists gcc; then tool_version gcc; fi
       ;;
-    ninja-build|ninja)
+    ninja-build|ninja|dev-build/ninja)
       tool_version ninja
       ;;
-    cmake)
+    cmake|dev-build/cmake)
       tool_version cmake
       ;;
-    doxygen)
+    doxygen|app-text/doxygen)
       tool_version doxygen
       ;;
-    graphviz)
+    graphviz|media-gfx/graphviz)
       # 'dot -V' prints to stderr; tool_version handles it
       tool_version dot
       ;;
-    libgtest-dev|gtest-devel|googletest)
+    libgtest-dev|gtest-devel|googletest|gtest|dev-cpp/gtest)
       echo "(headers/libs present if package installed)"
       ;;
-    libbenchmark-dev|google-benchmark|google-benchmark-devel)
+    libbenchmark-dev|google-benchmark|google-benchmark-devel|benchmark|dev-cpp/benchmark)
       echo "(libs present if package installed)"
+      ;;
+    base-devel)
+      echo "(meta-package for GNU toolchain)"
+      ;;
+    build-base)
+      echo "(meta-package for Alpine build toolchain)"
       ;;
     xcode-clt)
       # Presence implies Clang tools; show clang version if available
@@ -215,18 +305,25 @@ probe_version_for_logical() {
 # --------------------------- Plan selection ---------------------------
 declare -a REQ_PKGS OPT_PKGS ALL_PKGS
 
-if [[ "$OS" == "Darwin" ]]; then
-  REQ_PKGS=("${REQ_BREW[@]}")
-  OPT_PKGS=("${OPT_BREW[@]}")
-else
-  if [[ "$PM" == "apt-get" ]]; then
-    REQ_PKGS=("${REQ_DEB[@]}")
-    OPT_PKGS=("${OPT_DEB[@]}")
+populate_package_plan() {
+  local req_list opt_list
+  req_list="${REQ_MAP[$PM]:-}"
+  opt_list="${OPT_MAP[$PM]:-}"
+
+  if [[ -n "$req_list" ]]; then
+    read -r -a REQ_PKGS <<< "$req_list"
   else
-    REQ_PKGS=("${REQ_RPM[@]}")
-    OPT_PKGS=("${OPT_RPM[@]}")
+    REQ_PKGS=()
   fi
-fi
+
+  if [[ -n "$opt_list" ]]; then
+    read -r -a OPT_PKGS <<< "$opt_list"
+  else
+    OPT_PKGS=()
+  fi
+}
+
+populate_package_plan
 
 if [[ "$REQUIRED_ONLY" -eq 1 ]]; then
   ALL_PKGS=("${REQ_PKGS[@]}")
@@ -297,8 +394,17 @@ is_pkg_installed() {
     apt-get)
       dpkg -s "$pkg" >/dev/null 2>&1
       ;;
-    dnf)
+    dnf|zypper)
       rpm -q "$pkg" >/dev/null 2>&1
+      ;;
+    pacman)
+      pacman -Qi "$pkg" >/dev/null 2>&1
+      ;;
+    apk)
+      apk info -e "$pkg" >/dev/null 2>&1
+      ;;
+    emerge)
+      gentoo_is_installed "$pkg"
       ;;
     brew)
       # Homebrew first
@@ -356,8 +462,17 @@ pkg_version() {
     apt-get)
       pkg_version_apt "$pkg"
       ;;
-    dnf)
+    dnf|zypper)
       pkg_version_dnf "$pkg"
+      ;;
+    pacman)
+      pacman -Qi "$pkg" 2>/dev/null | awk -F': ' '/^Version/ {print $2}'
+      ;;
+    apk)
+      apk info "$pkg" 2>/dev/null | awk 'NR==1 {print $1}' | sed 's/^[^0-9]*-//'
+      ;;
+    emerge)
+      gentoo_pkg_version "$pkg"
       ;;
     brew)
       # Prefer Homebrew metadata; if not installed via brew, fall back to tool probe and tag it.
@@ -426,22 +541,6 @@ audit_packages() {
   fi
 }
 
-apt_update_if_needed() {
-  # Run apt-get update before installs to avoid stale/missing indexes (typical in CI).
-  # Respects -v (verbose) and -y (non-interactive) flags from the script.
-
-  # Non-interactive env prevents tzdata and friends from prompting in CI.
-  if [[ "$ASSUME_YES" -eq 1 ]]; then
-    export DEBIAN_FRONTEND=noninteractive
-  fi
-
-  if [[ "$VERBOSE" -eq 1 ]]; then
-    $PM_SUDO apt-get update
-  else
-    $PM_SUDO apt-get update -qq >/dev/null 2>&1
-  fi
-}
-
 # --------------------------- Installer ---------------------------
 install_missing() {
   [[ ${#MISSING_PKGS[@]} -eq 0 ]] && return 0
@@ -458,50 +557,36 @@ install_missing() {
 
   title "Installing Missing Packages"
 
-  if [[ "$OS" == "Darwin" ]]; then
-    # brew update recommended before install
-    if [[ "$VERBOSE" -eq 1 ]]; then
-      brew update
-      brew install "${MISSING_PKGS[@]}"
-    else
-      brew update >/dev/null 2>&1
-      brew install "${MISSING_PKGS[@]}" >/dev/null 2>&1
-    fi
-  else
-    local yflag="" qflags=""
-    [[ "$ASSUME_YES" -eq 1 ]] && yflag="$PM_Y_FLAG"
+  local yflag="" qflags=""
+  [[ "$ASSUME_YES" -eq 1 ]] && yflag="$PM_Y_FLAG"
 
-    case "$PM" in
-      apt-get)
-        # Always refresh package lists before installing on Debian/Ubuntu
-        apt_update_if_needed
-        if [[ "$VERBOSE" -eq 1 ]]; then
-          $PM_SUDO $PM_INSTALL_CMD $yflag "${MISSING_PKGS[@]}"
-        else
-          qflags="$PM_QUIET_FLAGS"
-          $PM_SUDO $PM_INSTALL_CMD $yflag $qflags "${MISSING_PKGS[@]}" >/dev/null 2>&1
-        fi
-        ;;
-      dnf)
-        if [[ "$VERBOSE" -eq 1 ]]; then
-          # existing per-PM verbose installs...
-          $PM_SUDO $PM_INSTALL_CMD $yflag "${MISSING_PKGS[@]}"
-        else
-          qflags="$PM_QUIET_FLAGS"
-          # existing per-PM quiet installs...
-          $PM_SUDO $PM_INSTALL_CMD $yflag $qflags "${MISSING_PKGS[@]}" >/dev/null 2>&1
-        fi
-        ;;
-      *)
-        # Fallback
-        if [[ "$VERBOSE" -eq 1 ]]; then
-          $PM_SUDO $PM_INSTALL_CMD $yflag "${MISSING_PKGS[@]}"
-        else
-          qflags="$PM_QUIET_FLAGS"
-          $PM_SUDO $PM_INSTALL_CMD $yflag $qflags "${MISSING_PKGS[@]}" >/dev/null 2>&1
-        fi
-        ;;
-    esac
+  # Run package metadata refresh if required
+  if [[ -n "$PM_UPDATE_CMD" && "$VERBOSE" -eq 1 ]]; then
+    $PM_SUDO $PM_UPDATE_CMD
+  elif [[ -n "$PM_UPDATE_CMD" ]]; then
+    $PM_SUDO $PM_UPDATE_CMD >/dev/null 2>&1 || true
+  fi
+
+  # Gentoo-specific preflight to ensure proper feature flags for graphviz dependencies
+  if [[ "$PM" == "emerge" ]]; then
+    # Ensure Portage is synced enough to resolve
+    eselect news read new || true
+    emerge-webrsync || true
+    emaint sync -a || true
+
+    # Satisfy graphviz -> gd USE requirements
+    mkdir -p /etc/portage/package.use
+    # Keep it idempotent: append only if not present
+    if ! grep -q '^media-libs/gd ' /etc/portage/package.use/tge 2>/dev/null; then
+      echo 'media-libs/gd fontconfig truetype' >> /etc/portage/package.use/tge
+    fi
+  fi
+
+  if [[ "$VERBOSE" -eq 1 ]]; then
+    $PM_SUDO $PM_INSTALL_CMD $yflag "${MISSING_PKGS[@]}"
+  else
+    qflags="$PM_QUIET_FLAGS"
+    $PM_SUDO $PM_INSTALL_CMD $yflag $qflags "${MISSING_PKGS[@]}" >/dev/null 2>&1
   fi
 
   if [[ $? -eq 0 ]]; then
