@@ -224,18 +224,18 @@ audit_packages() {
   fi
   bar
 
-  local pkg status color ver
-  for pkg in ${ALL_PKGS[@]}; do
-    status="missing"; color="$RED"; ver="-"
+  local pkg pkg_status color ver
+  for pkg in "${ALL_PKGS[@]}"; do
+    pkg_status="missing"; color="$RED"; ver="-"
     if brew_pkg_installed "$pkg"; then
-      status="present"; color="$GREEN"
+      pkg_status="present"; color="$GREEN"
       ver="$(pkg_version "$pkg")"
       [[ -z "$ver" ]] && ver="$(probe_version_for_logical "$pkg")"
       [[ -z "$ver" ]] && ver="-"
     else
       MISSING_PKGS+=("$pkg")
     fi
-    printf "%-26s | %s%-10s%s | %s\n" "$pkg" "$color" "$status" "$RESET" "$ver"
+    printf "%-26s | %s%-10s%s | %s\n" "$pkg" "$color" "$pkg_status" "$RESET" "$ver"
   done
   bar
 
