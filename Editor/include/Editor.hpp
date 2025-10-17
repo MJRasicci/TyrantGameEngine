@@ -1,15 +1,25 @@
 #pragma once
 
-#include "Core.hpp"
-#include <iostream>
+#include "Logging/GlobalLogger.hpp"
+#include "Logging/Logger.hpp"
+#include "Logging/LoggingOptions.hpp"
 
+#include <memory>
+
+/**
+ * @brief Entry point for running the Tyrant editor application.
+ */
 class Editor
 {
 public:
-    void Run()
-    {
-        Engine engine;
-        engine.Startup();
-        std::cout << "Editor Running..." << std::endl;
-    }
+    Editor();
+
+    /**
+     * @brief Executes the editor main loop.
+     */
+    void Run();
+
+private:
+    std::shared_ptr<TGE::GlobalLogger> globalLogger;
+    std::shared_ptr<TGE::Logger<Editor>> logger;
 };
