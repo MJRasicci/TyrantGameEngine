@@ -20,6 +20,8 @@
 #include <concepts>
 #include <type_traits>
 
+#include "Services/ServiceTraits.hpp"
+
 namespace TGE {
 
 /**
@@ -90,7 +92,7 @@ concept IConstructableFromLocator = requires (ServiceLocator* locator)
  * @note Tighten this concept later if additional invariants emerge.
  */
 template<class TService>
-concept IService = IConstructable<TService> || IConstructableFromLocator<TService>;
+concept IService = IConstructable<TService> || IConstructableFromLocator<TService> || ServiceConstructionTraits<TService>;
 
 // ==========================================================================
 // IServiceImplementation

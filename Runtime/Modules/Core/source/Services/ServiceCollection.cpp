@@ -1,45 +1,41 @@
-#include <algorithm>
+#include <format>
+#include <stdexcept>
+#include <utility>
+
 #include "Services/ServiceCollection.hpp"
 #include "Services/ServiceProvider.hpp"
 
-namespace TGE {
-
-ServiceDescriptor ServiceCollection::GetDescriptorFor(std::type_index serviceTypeId) const
+namespace TGE
 {
-    if (registeredServices.contains(serviceTypeId))
-        return registeredServices.at(serviceTypeId);
-
-    if (serviceImplementations.contains(serviceTypeId))
+    std::shared_ptr<ServiceProvider> ServiceCollection::BuildServiceProvider()
     {
-        const std::type_index interfaceTypeId = serviceImplementations.at(serviceTypeId);
-        if (registeredServices.contains(interfaceTypeId))
-            return registeredServices.at(interfaceTypeId);
+        auto sharedRegistry = std::make_shared<detail::ServiceRegistry>();
+        sharedRegistry->descriptors = std::move(registry.descriptors);
+        sharedRegistry->implementationLookup = std::move(registry.implementationLookup);
+
+        return std::shared_ptr<ServiceProvider>(new ServiceProvider(std::move(sharedRegistry)));
     }
 
-    throw std::domain_error(std::format("Unable to find a registered service descriptor for type \"{}\"", serviceTypeId.name()));
+    void ServiceCollection::Register(ServiceDescriptor descriptor)
+    {
+        const auto serviceType = descriptor.GetServiceType();
+        const auto implementationType = descriptor.GetImplementationType();
+
+        if (registry.descriptors.contains(serviceType))
+        {
+            throw std::domain_error(std::format(
+                "Service type \"{}\" has already been registered.", serviceType.name()));
+        }
+
+        if (registry.implementationLookup.contains(implementationType))
+        {
+            throw std::domain_error(std::format(
+                "Implementation type \"{}\" has already been associated with another service.",
+                implementationType.name()));
+        }
+
+        registry.descriptors.emplace(serviceType, std::move(descriptor));
+        registry.implementationLookup.emplace(implementationType, serviceType);
+    }
 }
 
-std::vector<ServiceDescriptor> ServiceCollection::GetRegisteredServices() const
-{
-    auto values = std::vector<ServiceDescriptor>();
-    values.reserve(registeredServices.size());
-
-    std::transform(begin(registeredServices), end(registeredServices), back_inserter(values),
-        [](const std::pair<std::type_index, ServiceDescriptor>& pair) { return pair.second; });
-
-    return values;
-}
-
-std::shared_ptr<ServiceProvider> ServiceCollection::BuildServiceProvider() const
-{
-    auto provider = new ServiceProvider(*this);
-    return std::shared_ptr<ServiceProvider>(provider);
-}
-
-void ServiceCollection::Add(ServiceDescriptor descriptor)
-{
-    registeredServices.emplace(descriptor.GetServiceType(), descriptor);
-    serviceImplementations.emplace(descriptor.GetImplementationType(), descriptor.GetServiceType());
-}
-
-} // namespace TGE

@@ -18,6 +18,7 @@
 #include "LogMessage.hpp"
 #include "LoggingOptions.hpp"
 #include "GlobalLogger.hpp"
+#include "Services/ServiceTraits.hpp"
 
 #include <memory>
 #include <exception>
@@ -158,3 +159,16 @@ const std::string Logger<T>::sourceContext = [] {
 }();
 
 } // namespace TGE
+
+namespace TGE
+{
+    template<class T>
+    struct ServiceDependencyTraits<Logger<T>>
+    {
+        static constexpr auto Dependencies() noexcept
+        {
+            return std::make_tuple(Inject<GlobalLogger>());
+        }
+    };
+}
+

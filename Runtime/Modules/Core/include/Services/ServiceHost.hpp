@@ -11,6 +11,7 @@
 #pragma once
 
 #include "Export.hpp"
+#include "Services/ServiceCollection.hpp"
 #include "Services/ServiceProvider.hpp"
 #include "Logging/Logger.hpp"
 
@@ -40,6 +41,11 @@ public:
 
 protected:
     std::shared_ptr<ServiceProvider> provider;
+
+    /**
+     * @brief Create a new service scope from the root provider.
+     */
+    std::shared_ptr<ServiceScope> CreateScope();
 
     /**
      * @brief Constructor for ServiceHost.
