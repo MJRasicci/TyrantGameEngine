@@ -20,18 +20,18 @@
         #ifdef BUILDING_TGE
             /**
              * @def TGE_API
-             * @brief Macro for exporting classes and functions from the IoC++ DLL.
+             * @brief Macro for exporting classes and functions from the Tyrant DLL.
              *
-             * When BUILDING_TGE is defined (during the building of the IoC++ library),
+             * When BUILDING_TGE is defined (during the building of the Tyrant library),
              * this macro ensures symbols are exported to the DLL.
              */
             #define TGE_API __declspec(dllexport)
         #else
             /**
              * @def TGE_API
-             * @brief Macro for importing classes and functions into the IoC++ application.
+             * @brief Macro for importing classes and functions into the Tyrant application.
              *
-             * When BUILDING_TGE is not defined (when using the IoC++ library),
+             * When BUILDING_TGE is not defined (when using the Tyrant library),
              * this macro ensures symbols are imported from the DLL.
              */
             #define TGE_API __declspec(dllimport)
@@ -49,7 +49,7 @@
             #if __has_attribute(visibility)
                 /**
                  * @def TGE_API
-                 * @brief Macro for exporting/importing classes and functions from/to the IoC++ shared object.
+                 * @brief Macro for exporting/importing classes and functions from/to the Tyrant shared object.
                  *
                  * When using GCC or Clang compilers, this macro ensures symbols are appropriately
                  * exported or imported using the 'visibility' attribute.
