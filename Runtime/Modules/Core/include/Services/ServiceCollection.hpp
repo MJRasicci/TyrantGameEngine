@@ -1,123 +1,105 @@
 /**
  * @file ServiceCollection.hpp
- * @brief Defines the ServiceCollection class for the Tyrant Game Engine dependency injection system.
- *
- * The ServiceCollection class provides mechanisms for registering services along with
- * their lifetimes and implementations. It acts as a registry for service descriptors,
- * enabling the creation of a ServiceProvider with all registered services.
+ * @brief Registry used to configure the dependency injection container.
  */
 
 #pragma once
 
+#include <functional>
+#include <memory>
+#include <typeindex>
+
 #include "Export.hpp"
-#include "Service.hpp"
-#include "ServiceDescriptor.hpp"
+#include "Services/ServiceDescriptor.hpp"
+#include "Services/ServiceRegistry.hpp"
 
-namespace TGE {
-    
-//===========================================================================//
-//=======> ServiceProvider class <===========================================//
-//===========================================================================//
-
-class ServiceProvider;
-
-/**
- * @class ServiceCollection
- * @brief Manages the registration of services and their descriptors in the Tyrant Game Engine system.
- *
- * ServiceCollection allows for the registration of services with associated lifetimes and
- * implementations. It maintains a collection of ServiceDescriptors, each defining how a
- * particular service should be instantiated and managed within the Tyrant Game Engine container.
- */
-class TGE_API ServiceCollection final
+namespace TGE
 {
-public:
+    class ServiceLocator;
+    class ServiceProvider;
+
     /**
-     * @brief Registers a service with a Singleton lifetime.
-     * @tparam TService The service type to register.
-     * @tparam TImplementation The implementation type of the service, defaulting to TService.
+     * @class ServiceCollection
+     * @brief Mutable registry used to configure the service provider.
      */
-    template<IService TService, IServiceImplementation<TService> TImplementation = TService>
-    void AddSingleton()
+    class TGE_API ServiceCollection final
     {
-        Add(ServiceDescriptor::Singleton<TService, TImplementation>());
-    }
+    public:
+        /**
+         * @brief Register a singleton using the default activation strategy.
+         */
+        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        void AddSingleton();
 
-    /**
-     * @brief Registers a service with a Scoped lifetime.
-     * @tparam TService The service type to register.
-     * @tparam TImplementation The implementation type of the service, defaulting to TService.
-     */
-    template<IService TService, IServiceImplementation<TService> TImplementation = TService>
-    void AddScoped()
-    {
-        Add(ServiceDescriptor::Scoped<TService, TImplementation>());
-    }
+        /**
+         * @brief Register a scoped service using the default activation strategy.
+         */
+        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        void AddScoped();
 
-    /**
-     * @brief Registers a service with a Transient lifetime.
-     * @tparam TService The service type to register.
-     * @tparam TImplementation The implementation type of the service, defaulting to TService.
-     */
-    template<IService TService, IServiceImplementation<TService> TImplementation = TService>
-    void AddTransient()
-    {
-        Add(ServiceDescriptor::Transient<TService, TImplementation>());
-    }
+        /**
+         * @brief Register a transient service using the default activation strategy.
+         */
+        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        void AddTransient();
 
-    /**
-     * @brief Retrieves the ServiceDescriptor for a specified service type.
-     * @tparam TService The service type for which to retrieve the descriptor.
-     * @return ServiceDescriptor The descriptor associated with TService.
-     */
-    template<IService TService>
-    ServiceDescriptor GetDescriptorFor() const
-    {
-        const std::type_index serviceTypeId = typeid(TService);
-        return GetDescriptorFor(serviceTypeId);
-    }
+        /**
+         * @brief Register a singleton that reuses an existing instance.
+         */
+        template<IService TService>
+        void AddSingleton(const std::shared_ptr<TService>& instance);
 
-    /**
-     * @brief Retrieves the ServiceDescriptor for a given type index.
-     * @param serviceTypeId The type index of the service.
-     * @return ServiceDescriptor The descriptor for the specified service type.
-     */
-    ServiceDescriptor GetDescriptorFor(std::type_index serviceTypeId) const;
+        /**
+         * @brief Register a scoped service that reuses an existing instance.
+         */
+        template<IService TService>
+        void AddScoped(const std::shared_ptr<TService>& instance);
 
-    /**
-     * @brief Returns a list of all registered service descriptors.
-     * @return std::vector<ServiceDescriptor> A vector containing all registered service descriptors.
-     */
-    std::vector<ServiceDescriptor> GetRegisteredServices() const;
+        /**
+         * @brief Register a transient service that reuses an existing instance.
+         */
+        template<IService TService>
+        void AddTransient(const std::shared_ptr<TService>& instance);
 
-    /**
-     * @brief Builds a ServiceProvider with all registered services.
-     * @return std::shared_ptr<ServiceProvider> A shared pointer to the ServiceProvider.
-     */
-    std::shared_ptr<ServiceProvider> BuildServiceProvider() const;
+        /**
+         * @brief Register a singleton that resolves instances via a custom factory.
+         */
+        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        void AddSingleton(std::function<std::shared_ptr<TService>(ServiceLocator&)> factory);
 
-private:
-    /**
-     * @brief A map holding registered services keyed by their type index.
-     *
-     * This unordered map stores ServiceDescriptors, allowing quick retrieval and management
-     * of service registrations based on their type index.
-     */
-    std::unordered_map<std::type_index, ServiceDescriptor> registeredServices;
+        /**
+         * @brief Register a scoped service that resolves instances via a custom factory.
+         */
+        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        void AddScoped(std::function<std::shared_ptr<TService>(ServiceLocator&)> factory);
 
-    /**
-     * @brief A map associating service types with their implementation types.
-     *
-     * This unordered map is used to maintain relationships between service interfaces and
-     * their respective implementation types, facilitating type resolution and casting.
-     */
-    std::unordered_map<std::type_index, std::type_index> serviceImplementations;
+        /**
+         * @brief Register a transient service that resolves instances via a custom factory.
+         */
+        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        void AddTransient(std::function<std::shared_ptr<TService>(ServiceLocator&)> factory);
 
-    /**
-     * @brief Adds a ServiceDescriptor to the collection.
-     * @param descriptor The ServiceDescriptor to add to the collection.
-     */
-    void Add(ServiceDescriptor descriptor);
-};
+        /**
+         * @brief Create the root service provider for the configured services.
+         */
+        std::shared_ptr<ServiceProvider> BuildServiceProvider();
 
+        /**
+         * @brief Read-only view of the registered descriptors.
+         */
+        const detail::ServiceRegistry& GetRegistry() const noexcept { return registry; }
+
+    private:
+        /**
+         * @brief Insert a descriptor into the registry with duplicate detection.
+         */
+        void Register(ServiceDescriptor descriptor);
+
+        /**
+         * @brief Accumulates descriptors prior to provider construction.
+         */
+        detail::ServiceRegistry registry;
+    };
 }
+
+#include "Services/ServiceCollection.inl"

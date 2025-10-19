@@ -1,51 +1,80 @@
+/**
+ * @file ServiceLocator.hpp
+ * @brief Base class for resolving services from the dependency injection container.
+ */
+
 #pragma once
 
 #include <memory>
+#include <typeindex>
+#include <unordered_map>
+#include <vector>
+
 #include "Export.hpp"
 #include "Services/Service.hpp"
-#include "Services/ServiceDescriptor.hpp"
-#include "Services/ServiceCollection.hpp"
+#include "Services/ServiceLifetime.hpp"
 
 namespace TGE
 {
+    class ServiceDescriptor;
+    namespace detail { struct ServiceRegistry; }
+
+    class ServiceProvider;
+    class ServiceScope;
+
+    /**
+     * @class ServiceLocator
+     * @brief Base class that performs service resolution and lifetime management.
+     */
     class TGE_API ServiceLocator
     {
     public:
+        using ActivationHandle = std::shared_ptr<void>;
+
+        /**
+         * @brief Resolve a service or throw if the service is unavailable.
+         */
         template<IService TService>
-        std::shared_ptr<TService> GetRequiredService()
-        {
-            auto service = TryGetService<TService>();
+        std::shared_ptr<TService> GetRequiredService();
 
-            if (service == nullptr)
-                throw std::domain_error(std::format("Unable to locate service \"{}\"", typeid(TService).name()));
-
-            return service;
-        }
-
+        /**
+         * @brief Resolve a service if available without throwing on failure.
+         */
         template<IService TService>
-        std::shared_ptr<TService> TryGetService()
-        {
-            ServiceDescriptor descriptor = services.GetDescriptorFor<TService>();
-            std::type_index serviceTypeId = descriptor.GetServiceType();
-            std::shared_ptr<std::any> serviceRef;
-
-            if (descriptor.GetServiceLifetime() == ServiceLifetime::Transient)
-                serviceRef = descriptor.BuildInstance(this);
-            else if (instances.contains(serviceTypeId))
-                serviceRef = instances.at(serviceTypeId);
-            else
-                return nullptr;
-
-            return descriptor.CastToService<TService>(serviceRef);
-        }
+        std::shared_ptr<TService> TryGetService();
 
     protected:
-        ServiceLocator(ServiceCollection& services);
+        ServiceLocator(std::shared_ptr<detail::ServiceRegistry> registry,
+                       std::unordered_map<std::type_index, ActivationHandle>* singletonCache,
+                       ServiceLocator* root,
+                       ServiceLocator* parent);
 
-        ServiceLocator(ServiceLocator& locator);
+        virtual ~ServiceLocator() = default;
 
-        ServiceCollection services;
-        //ServiceFactory factory;
-        std::unordered_map<std::type_index, std::shared_ptr<std::any>> instances;
+        const std::shared_ptr<detail::ServiceRegistry>& GetRegistry() const noexcept { return registry; }
+
+    private:
+
+        struct ResolutionResult
+        {
+            const ServiceDescriptor* descriptor { nullptr };
+            ActivationHandle instance;
+        };
+
+        ResolutionResult Resolve(std::type_index type, bool required);
+        ResolutionResult ResolveInternal(std::type_index type, std::vector<std::type_index>& path, bool required);
+        const ServiceDescriptor* FindDescriptor(std::type_index type) const;
+        ActivationHandle GetCachedInstance(ServiceLifetime lifetime, std::type_index type) const;
+        void CacheInstance(ServiceLifetime lifetime, std::type_index type, const ActivationHandle& instance);
+
+        std::shared_ptr<detail::ServiceRegistry> registry;
+        std::unordered_map<std::type_index, ActivationHandle>* singletonCache;
+        ServiceLocator* rootLocator;
+        ServiceLocator* parentLocator;
+        std::unordered_map<std::type_index, ActivationHandle> scopedCache;
+        std::vector<std::type_index>* activePath { nullptr };
     };
 }
+
+#include "Services/ServiceLocator.inl"
+

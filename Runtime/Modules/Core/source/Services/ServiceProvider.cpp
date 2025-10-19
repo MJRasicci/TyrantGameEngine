@@ -1,25 +1,23 @@
+#include <utility>
+
 #include "Services/ServiceProvider.hpp"
 
-namespace TGE {
-
-    ServiceProvider::ServiceProvider(ServiceCollection services)
-        : ServiceLocator(services)
-    { }
+namespace TGE
+{
+    ServiceProvider::ServiceProvider(std::shared_ptr<detail::ServiceRegistry> registry)
+        : ServiceLocator(std::move(registry), &singletonStorage, this, nullptr)
+    {
+    }
 
     std::shared_ptr<ServiceScope> ServiceProvider::CreateScope()
     {
-        auto scope = new ServiceScope(*this);
-        return std::shared_ptr<ServiceScope>(scope);
+        return std::shared_ptr<ServiceScope>(new ServiceScope(shared_from_this()));
     }
 
-    ServiceScope::ServiceScope(ServiceLocator& provider)
-        : ServiceLocator(provider)
+    ServiceScope::ServiceScope(std::shared_ptr<ServiceProvider> rootProvider)
+        : ServiceLocator(rootProvider->GetRegistry(), &rootProvider->singletonStorage, rootProvider.get(), rootProvider.get()),
+          rootOwner(std::move(rootProvider))
     {
-        for (auto& service : services.GetRegisteredServices())
-        {
-            if (service.GetServiceLifetime() == ServiceLifetime::Scoped)
-                instances.insert({ service.GetServiceType(), service.BuildInstance(this) });
-        }
     }
+}
 
-} // namespace TGE
