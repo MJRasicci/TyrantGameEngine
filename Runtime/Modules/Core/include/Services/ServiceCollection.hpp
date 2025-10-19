@@ -5,9 +5,13 @@
 
 #pragma once
 
+#include <format>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <typeindex>
+#include <unordered_map>
+#include <vector>
 
 #include "Export.hpp"
 #include "Services/ServiceDescriptor.hpp"

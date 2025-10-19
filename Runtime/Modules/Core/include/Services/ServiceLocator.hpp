@@ -5,7 +5,9 @@
 
 #pragma once
 
+#include <any>
 #include <memory>
+#include <stdexcept>
 #include <typeindex>
 #include <unordered_map>
 #include <vector>
