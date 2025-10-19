@@ -1,3 +1,5 @@
+#include <stdexcept>
+
 #include "Services/ServiceHost.hpp"
 #include "Logging/Logger.hpp"
 
@@ -58,6 +60,14 @@ void ServiceHost::OnStop()
 {
     // Default implementation of OnStop.
     // This method can be overridden in derived classes to include logic for service stop.
+}
+
+std::shared_ptr<ServiceScope> ServiceHost::CreateScope()
+{
+    if (!provider)
+        throw std::domain_error("ServiceProvider has not been initialized.");
+
+    return provider->CreateScope();
 }
 
 } // namespace TGE
