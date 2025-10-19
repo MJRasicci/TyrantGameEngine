@@ -16,10 +16,6 @@ namespace TGE::detail
      * @struct ServiceRegistry
      * @brief Aggregates descriptors and implementation lookups for a collection.
      */
-    /**
-     * @struct ServiceRegistry
-     * @brief Aggregates descriptors and implementation lookups for a collection.
-     */
     struct ServiceRegistry
     {
         /**
