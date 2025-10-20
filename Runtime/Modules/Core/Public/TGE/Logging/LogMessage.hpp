@@ -1,6 +1,6 @@
 #pragma once
 
-#include "TGE/Core/Export.hpp"
+#include "TGE/Export.hpp"
 #include "TGE/Logging/LogLevel.hpp"
 #include <format>
 #include <string_view>

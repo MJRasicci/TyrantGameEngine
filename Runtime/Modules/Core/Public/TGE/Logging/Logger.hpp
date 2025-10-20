@@ -13,7 +13,7 @@
     #include <cxxabi.h>
 #endif
 
-#include "TGE/Core/Export.hpp"
+#include "TGE/Export.hpp"
 #include "TGE/Logging/LogLevel.hpp"
 #include "TGE/Logging/LogMessage.hpp"
 #include "TGE/Logging/LoggingOptions.hpp"
