@@ -15,7 +15,7 @@
 #include <string_view>
 #include <format>
 #include <utility>
-#include "TGE/Core/Export.hpp"
+#include "TGE/Export.hpp"
 
 namespace TGE {
 
