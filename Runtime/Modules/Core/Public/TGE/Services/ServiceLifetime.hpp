@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include "Export.hpp"
+#include "TGE/Export.hpp"
 
 namespace TGE {
 

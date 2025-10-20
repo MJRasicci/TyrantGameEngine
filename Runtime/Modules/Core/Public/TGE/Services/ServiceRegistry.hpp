@@ -8,7 +8,7 @@
 #include <typeindex>
 #include <unordered_map>
 
-#include "Services/ServiceDescriptor.hpp"
+#include "TGE/Services/ServiceDescriptor.hpp"
 
 namespace TGE::detail
 {

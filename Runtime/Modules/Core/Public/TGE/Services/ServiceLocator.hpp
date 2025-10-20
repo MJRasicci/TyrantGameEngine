@@ -12,9 +12,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "Export.hpp"
-#include "Services/Service.hpp"
-#include "Services/ServiceLifetime.hpp"
+#include "TGE/Export.hpp"
+#include "TGE/Services/Service.hpp"
+#include "TGE/Services/ServiceLifetime.hpp"
 
 namespace TGE
 {
@@ -78,5 +78,5 @@ namespace TGE
     };
 }
 
-#include "Services/ServiceLocator.inl"
+#include "TGE/Services/ServiceLocator.inl"
 

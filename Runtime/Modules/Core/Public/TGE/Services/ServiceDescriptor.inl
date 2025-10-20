@@ -5,8 +5,8 @@
 #include <type_traits>
 #include <utility>
 
-#include "Services/ServiceActivator.hpp"
-#include "Services/ServiceLocator.hpp"
+#include "TGE/Services/ServiceActivator.hpp"
+#include "TGE/Services/ServiceLocator.hpp"
 
 namespace TGE
 {

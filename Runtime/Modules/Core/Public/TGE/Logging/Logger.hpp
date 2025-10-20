@@ -18,7 +18,7 @@
 #include "TGE/Logging/LogMessage.hpp"
 #include "TGE/Logging/LoggingOptions.hpp"
 #include "TGE/Logging/GlobalLogger.hpp"
-#include "Services/ServiceTraits.hpp"
+#include "TGE/Services/ServiceTraits.hpp"
 
 #include <memory>
 #include <exception>

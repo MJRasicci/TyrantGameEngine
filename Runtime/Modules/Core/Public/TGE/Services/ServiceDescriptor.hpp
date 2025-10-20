@@ -10,10 +10,10 @@
 #include <stdexcept>
 #include <typeindex>
 
-#include "Export.hpp"
-#include "Services/Service.hpp"
-#include "Services/ServiceLifetime.hpp"
-#include "Services/ServiceTraits.hpp"
+#include "TGE/Export.hpp"
+#include "TGE/Services/Service.hpp"
+#include "TGE/Services/ServiceLifetime.hpp"
+#include "TGE/Services/ServiceTraits.hpp"
 
 namespace TGE
 {
@@ -159,4 +159,4 @@ namespace TGE
     };
 }
 
-#include "Services/ServiceDescriptor.inl"
+#include "TGE/Services/ServiceDescriptor.inl"

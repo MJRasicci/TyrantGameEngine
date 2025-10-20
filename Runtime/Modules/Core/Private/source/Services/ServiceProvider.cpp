@@ -1,6 +1,6 @@
 #include <utility>
 
-#include "Services/ServiceProvider.hpp"
+#include "TGE/Services/ServiceProvider.hpp"
 
 namespace TGE
 {

@@ -20,7 +20,7 @@
 #include <concepts>
 #include <type_traits>
 
-#include "Services/ServiceTraits.hpp"
+#include "TGE/Services/ServiceTraits.hpp"
 
 namespace TGE {
 

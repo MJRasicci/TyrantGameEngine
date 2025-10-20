@@ -5,7 +5,7 @@
 // logging facilities and the module export macros without worrying about the
 // underlying folder layout.
 
-#include "TGE/Core/Export.hpp"
+#include "TGE/Export.hpp"
 
 #include "TGE/Logging/GlobalLogger.hpp"
 #include "TGE/Logging/ILogSink.hpp"
@@ -16,3 +16,14 @@
 #include "TGE/Logging/LoggingOptions.hpp"
 #include "TGE/Logging/Sinks/ConsoleLogSink.hpp"
 #include "TGE/Logging/Sinks/FileLogSink.hpp"
+
+#include "TGE/Services/Service.hpp"
+#include "TGE/Services/ServiceActivator.hpp"
+#include "TGE/Services/ServiceCollection.hpp"
+#include "TGE/Services/ServiceDescriptor.hpp"
+#include "TGE/Services/ServiceHost.hpp"
+#include "TGE/Services/ServiceLifetime.hpp"
+#include "TGE/Services/ServiceLocator.hpp"
+#include "TGE/Services/ServiceProvider.hpp"
+#include "TGE/Services/ServiceRegistry.hpp"
+#include "TGE/Services/ServiceTraits.hpp"

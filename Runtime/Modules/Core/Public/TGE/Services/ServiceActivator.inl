@@ -4,7 +4,7 @@
 #include <tuple>
 #include <type_traits>
 
-#include "Services/ServiceLocator.hpp"
+#include "TGE/Services/ServiceLocator.hpp"
 
 namespace TGE
 {

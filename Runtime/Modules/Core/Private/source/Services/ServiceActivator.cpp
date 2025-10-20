@@ -1,4 +1,4 @@
-#include "Services/ServiceActivator.hpp"
+#include "TGE/Services/ServiceActivator.hpp"
 
 /**
  * @brief Translation unit for ServiceActivator to anchor documentation-only symbols.
