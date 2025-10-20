@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Logging/LoggingOptions.hpp"
-#include "Logging/LogMessage.hpp"
+#include "TGE/Logging/LoggingOptions.hpp"
+#include "TGE/Logging/LogMessage.hpp"
 
 #include <atomic>
 #include <condition_variable>

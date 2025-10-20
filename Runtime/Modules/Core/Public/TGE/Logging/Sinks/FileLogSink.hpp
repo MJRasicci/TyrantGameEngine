@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Logging/ILogSink.hpp"
+#include "TGE/Logging/ILogSink.hpp"
 
 #include <filesystem>
 #include <fstream>

@@ -45,15 +45,16 @@ endfunction()
 #     <Name>
 #     [REQUIRED]
 #     [DEPS dep1 dep2 ...]
-#     [INCLUDE_DIR <path>]    # public headers root (default: Runtime/<Name>/include)
-#     [SOURCE_DIR  <path>]    # source root (default: Runtime/<Name>/source)
+#     [INCLUDE_DIR <path>]    # public headers root (default: Runtime/Modules/<Name>/Public)
+#     [PRIVATE_INCLUDE_DIR <path>] # private headers root (default: Runtime/Modules/<Name>/Private/include)
+#     [SOURCE_DIR  <path>]    # source root (default: Runtime/Modules/<Name>/Private/source)
 #     [SOURCES ...]           # explicit source list (else glob *.cpp under SOURCE_DIR)
 #     [PUBLIC_DEFINES ...]    # extra public defines
 #     [PRIVATE_DEFINES ...]   # extra private defines
 #   )
 function(TGE_MODULE name)
     set(options REQUIRED)
-    set(oneValueArgs INCLUDE_DIR SOURCE_DIR)
+    set(oneValueArgs INCLUDE_DIR PRIVATE_INCLUDE_DIR SOURCE_DIR)
     set(multiValueArgs DEPS SOURCES PUBLIC_DEFINES PRIVATE_DEFINES)
     cmake_parse_arguments(TGE_MOD "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
@@ -62,10 +63,13 @@ function(TGE_MODULE name)
     endif()
 
     if(NOT TGE_MOD_INCLUDE_DIR)
-        set(TGE_MOD_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Modules/${name}/include")
+        set(TGE_MOD_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Modules/${name}/Public")
+    endif()
+    if(NOT TGE_MOD_PRIVATE_INCLUDE_DIR)
+        set(TGE_MOD_PRIVATE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Modules/${name}/Private/include")
     endif()
     if(NOT TGE_MOD_SOURCE_DIR)
-        set(TGE_MOD_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/Modules/${name}/source")
+        set(TGE_MOD_SOURCE_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/Modules/${name}/Private/source")
     endif()
 
     TGE_UPPER("${name}" NAME_UP)
@@ -124,6 +128,10 @@ function(TGE_MODULE name)
         PUBLIC
             $<BUILD_INTERFACE:${TGE_MOD_INCLUDE_DIR}>
             $<INSTALL_INTERFACE:include>)
+
+    if(TGE_MOD_PRIVATE_INCLUDE_DIR AND EXISTS "${TGE_MOD_PRIVATE_INCLUDE_DIR}")
+        target_include_directories(${_obj_target} PRIVATE "${TGE_MOD_PRIVATE_INCLUDE_DIR}")
+    endif()
 
     if(TGE_MOD_PUBLIC_DEFINES)
         target_compile_definitions(${_obj_target} PUBLIC ${TGE_MOD_PUBLIC_DEFINES})

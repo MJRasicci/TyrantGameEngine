@@ -1,10 +1,10 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "Logging/GlobalLogger.hpp"
-#include "Logging/LogFormatter.hpp"
-#include "Logging/Logger.hpp"
-#include "Logging/LoggingOptions.hpp"
+#include "TGE/Logging/GlobalLogger.hpp"
+#include "TGE/Logging/LogFormatter.hpp"
+#include "TGE/Logging/Logger.hpp"
+#include "TGE/Logging/LoggingOptions.hpp"
 
 #include <chrono>
 #include <condition_variable>
