@@ -14,10 +14,9 @@
 #endif
 
 #include "TGE/Export.hpp"
+#include "TGE/Logging/ILogDispatcher.hpp"
 #include "TGE/Logging/LogLevel.hpp"
 #include "TGE/Logging/LogMessage.hpp"
-#include "TGE/Logging/LoggingOptions.hpp"
-#include "TGE/Logging/GlobalLogger.hpp"
 #include "TGE/Services/ServiceTraits.hpp"
 
 #include <memory>
@@ -59,7 +58,7 @@ public:
     /**
      * @brief Builds a logger bound to the shared global dispatcher.
      */
-    explicit Logger(std::shared_ptr<GlobalLogger> globalLogger) : globalLogger(std::move(globalLogger))
+    explicit Logger(std::shared_ptr<ILogDispatcher> dispatcher) : dispatcher(std::move(dispatcher))
     {
     }
 
@@ -69,7 +68,7 @@ public:
      */
     void Log(const LogMessage& message)
     {
-        globalLogger->Log(message);
+        dispatcher->Log(message);
     }
 
     /**
@@ -140,7 +139,7 @@ public:
 private:
     static const std::string sourceContext;
 
-    std::shared_ptr<GlobalLogger> globalLogger;
+    std::shared_ptr<ILogDispatcher> dispatcher;
 };
 
 template <class T>
@@ -167,7 +166,7 @@ namespace TGE
     {
         static constexpr auto Dependencies() noexcept
         {
-            return std::make_tuple(Inject<GlobalLogger>());
+            return std::make_tuple(Inject<ILogDispatcher>());
         }
     };
 }

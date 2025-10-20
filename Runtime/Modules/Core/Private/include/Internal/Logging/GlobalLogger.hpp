@@ -1,5 +1,6 @@
 #pragma once
 
+#include "TGE/Logging/ILogDispatcher.hpp"
 #include "TGE/Logging/LoggingOptions.hpp"
 #include "TGE/Logging/LogMessage.hpp"
 
@@ -14,7 +15,7 @@ namespace TGE {
 /**
  * @brief Central asynchronous dispatcher that forwards log messages to registered sinks.
  */
-class GlobalLogger
+class GlobalLogger : public ILogDispatcher
 {
 public:
     /**
@@ -35,12 +36,12 @@ public:
     /**
      * @brief Enqueues a message for asynchronous processing.
      */
-    void Log(const LogMessage& message);
+    void Log(const LogMessage& message) override;
 
     /**
      * @brief Flushes pending messages to all sinks synchronously.
      */
-    void Flush();
+    void Flush() override;
 
 private:
     /**

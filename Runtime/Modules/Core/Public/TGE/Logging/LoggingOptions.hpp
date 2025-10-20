@@ -9,7 +9,7 @@
 namespace TGE {
 
 /**
- * @brief Aggregates configuration required to construct a @ref GlobalLogger.
+ * @brief Aggregates configuration required to construct a logging dispatcher.
  */
 class LoggingOptions
 {

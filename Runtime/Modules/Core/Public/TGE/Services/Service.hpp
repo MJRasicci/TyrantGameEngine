@@ -92,7 +92,11 @@ concept IConstructableFromLocator = requires (ServiceLocator* locator)
  * @note Tighten this concept later if additional invariants emerge.
  */
 template<class TService>
-concept IService = IConstructable<TService> || IConstructableFromLocator<TService> || ServiceConstructionTraits<TService>;
+concept IService =
+    IConstructable<TService> ||
+    IConstructableFromLocator<TService> ||
+    ServiceConstructionTraits<TService> ||
+    std::is_abstract_v<TService>;
 
 // ==========================================================================
 // IServiceImplementation
@@ -123,6 +127,6 @@ template<class TService, class TImplementation>
 concept IServiceImplementation =
     IService<TService> &&
     IService<TImplementation> &&
-    std::is_base_of<TService, TImplementation>::value; // Implementation derives from Service
+    std::derived_from<TImplementation, TService>;
 
 } // namespace TGE
