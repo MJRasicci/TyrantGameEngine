@@ -1,4 +1,4 @@
-#include "TGE/Editor.hpp"
+#include "Editor.hpp"
 
 #include <stdexcept>
 
