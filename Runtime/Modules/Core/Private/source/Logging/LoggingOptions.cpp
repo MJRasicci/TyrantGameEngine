@@ -1,6 +1,6 @@
-#include "Logging/LoggingOptions.hpp"
+#include "TGE/Logging/LoggingOptions.hpp"
 
-#include "Logging/Sinks/ConsoleLogSink.hpp"
+#include "TGE/Logging/Sinks/ConsoleLogSink.hpp"
 
 #include <utility>
 

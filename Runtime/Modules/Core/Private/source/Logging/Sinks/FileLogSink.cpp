@@ -1,4 +1,4 @@
-#include "Logging/Sinks/FileLogSink.hpp"
+#include "TGE/Logging/Sinks/FileLogSink.hpp"
 
 #include <stdexcept>
 #include <string_view>

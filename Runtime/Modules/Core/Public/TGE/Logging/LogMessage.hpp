@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Export.hpp"
-#include "LogLevel.hpp"
+#include "TGE/Core/Export.hpp"
+#include "TGE/Logging/LogLevel.hpp"
 #include <format>
 #include <string_view>
 #include <chrono>

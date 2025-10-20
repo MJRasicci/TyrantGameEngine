@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Logging/LogFormatter.hpp"
-#include "Logging/ILogSink.hpp"
+#include "TGE/Logging/LogFormatter.hpp"
+#include "TGE/Logging/ILogSink.hpp"
 
 #include <memory>
 #include <vector>
