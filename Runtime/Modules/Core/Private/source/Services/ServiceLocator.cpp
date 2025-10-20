@@ -4,9 +4,9 @@
 #include <string>
 #include <vector>
 
-#include "Services/ServiceLocator.hpp"
-#include "Services/ServiceRegistry.hpp"
-#include "Services/ServiceDescriptor.hpp"
+#include "TGE/Services/ServiceLocator.hpp"
+#include "TGE/Services/ServiceRegistry.hpp"
+#include "TGE/Services/ServiceDescriptor.hpp"
 
 namespace
 {

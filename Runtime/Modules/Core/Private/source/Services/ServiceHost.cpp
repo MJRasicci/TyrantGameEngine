@@ -1,7 +1,7 @@
 #include <stdexcept>
 
-#include "Services/ServiceHost.hpp"
-#include "Logging/Logger.hpp"
+#include "TGE/Services/ServiceHost.hpp"
+#include "TGE/Logging/Logger.hpp"
 
 namespace TGE {
 

@@ -10,10 +10,10 @@
 
 #pragma once
 
-#include "Export.hpp"
-#include "Services/ServiceCollection.hpp"
-#include "Services/ServiceProvider.hpp"
-#include "Logging/Logger.hpp"
+#include "TGE/Export.hpp"
+#include "TGE/Services/ServiceCollection.hpp"
+#include "TGE/Services/ServiceProvider.hpp"
+#include "TGE/Logging/Logger.hpp"
 
 namespace TGE {
 

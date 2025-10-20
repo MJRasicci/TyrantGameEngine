@@ -1,9 +1,6 @@
 #pragma once
 
-#include "TGE/Logging/GlobalLogger.hpp"
-#include "TGE/Logging/Logger.hpp"
-#include "TGE/Logging/LoggingOptions.hpp"
-#include "Services/ServiceHost.hpp"
+#include "TGE/Core.hpp"
 
 namespace TGE
 {
@@ -48,6 +45,5 @@ protected:
     void OnStop() override;
 
 private:
-    std::shared_ptr<TGE::GlobalLogger> globalLogger;
     std::shared_ptr<TGE::Logger<Editor>> logger;
 };

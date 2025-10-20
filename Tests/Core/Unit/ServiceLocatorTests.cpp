@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
-#include "Services/ServiceCollection.hpp"
-#include "Services/ServiceLocator.hpp"
-#include "Services/ServiceProvider.hpp"
-#include "Services/ServiceTraits.hpp"
+#include "TGE/Services/ServiceCollection.hpp"
+#include "TGE/Services/ServiceLocator.hpp"
+#include "TGE/Services/ServiceProvider.hpp"
+#include "TGE/Services/ServiceTraits.hpp"
 
 #include <memory>
 #include <stdexcept>

@@ -9,8 +9,8 @@
 #include <typeindex>
 #include <unordered_map>
 
-#include "Export.hpp"
-#include "Services/ServiceLocator.hpp"
+#include "TGE/Export.hpp"
+#include "TGE/Services/ServiceLocator.hpp"
 
 namespace TGE
 {

@@ -1,11 +1,6 @@
-#include "Editor.hpp"
+#include "TGE/Editor.hpp"
 
 #include <stdexcept>
-
-#include "Services/ServiceCollection.hpp"
-#include "Services/ServiceLocator.hpp"
-#include "Services/ServiceProvider.hpp"
-#include "Services/ServiceTraits.hpp"
 
 TGE_DECLARE_SERVICE_DEPENDENCIES(Editor, TGE::InjectLocator());
 
@@ -33,17 +28,13 @@ void Editor::ConfigureServices(TGE::ServiceCollection& services)
 
 void Editor::OnStart()
 {
-    globalLogger = provider->GetRequiredService<TGE::GlobalLogger>();
     logger = provider->GetRequiredService<TGE::Logger<Editor>>();
     logger->Info("Starting Editor...");
 }
 
 void Editor::OnStop()
 {
-    if (globalLogger)
-    {
-        globalLogger->Flush();
-    }
+    logger->Info("Stopping Editor...");
 }
 
 int main()

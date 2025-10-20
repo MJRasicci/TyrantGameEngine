@@ -9,7 +9,7 @@
 #include <tuple>
 #include <utility>
 
-#include "Services/ServiceTraits.hpp"
+#include "TGE/Services/ServiceTraits.hpp"
 
 namespace TGE
 {
@@ -59,5 +59,5 @@ public:
 };
 }
 
-#include "Services/ServiceActivator.inl"
+#include "TGE/Services/ServiceActivator.inl"
 

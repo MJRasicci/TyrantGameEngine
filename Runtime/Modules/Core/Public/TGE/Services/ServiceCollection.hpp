@@ -13,9 +13,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "Export.hpp"
-#include "Services/ServiceDescriptor.hpp"
-#include "Services/ServiceRegistry.hpp"
+#include "TGE/Export.hpp"
+#include "TGE/Services/ServiceDescriptor.hpp"
+#include "TGE/Services/ServiceRegistry.hpp"
 
 namespace TGE
 {
@@ -106,4 +106,4 @@ namespace TGE
     };
 }
 
-#include "Services/ServiceCollection.inl"
+#include "TGE/Services/ServiceCollection.inl"

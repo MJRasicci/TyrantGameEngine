@@ -1,4 +1,4 @@
-#include "Services/ServiceDescriptor.hpp"
+#include "TGE/Services/ServiceDescriptor.hpp"
 
 #pragma once
 
