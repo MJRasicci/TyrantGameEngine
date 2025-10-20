@@ -1,7 +1,9 @@
+#include <memory>
 #include <stdexcept>
 
-#include "TGE/Services/ServiceHost.hpp"
+#include "TGE/Logging/GlobalLogger.hpp"
 #include "TGE/Logging/Logger.hpp"
+#include "TGE/Services/ServiceHost.hpp"
 
 namespace TGE {
 
@@ -24,6 +26,11 @@ void ServiceHost::Start()
     // Initialize service collection and add logging services
     auto services = ServiceCollection();
     services.AddSingleton<GlobalLogger>();
+    services.AddSingleton<ILogDispatcher, GlobalLogger>([](ServiceLocator& locator)
+    {
+        auto dispatcher = locator.GetRequiredService<GlobalLogger>();
+        return std::static_pointer_cast<ILogDispatcher>(dispatcher);
+    });
     services.AddTransient<Logger<ServiceHost>>();
 
     // Let derived class configure application services.

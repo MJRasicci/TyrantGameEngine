@@ -15,12 +15,12 @@
 
 #include "TGE/Export.hpp"
 #include "TGE/Services/ServiceDescriptor.hpp"
-#include "TGE/Services/ServiceRegistry.hpp"
 
 namespace TGE
 {
     class ServiceLocator;
     class ServiceProvider;
+    namespace detail { struct ServiceRegistry; }
 
     /**
      * @class ServiceCollection
@@ -29,69 +29,76 @@ namespace TGE
     class TGE_API ServiceCollection final
     {
     public:
+        ServiceCollection();
+        ~ServiceCollection();
+
         /**
          * @brief Register a singleton using the default activation strategy.
          */
-        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        template<class TService, class TImplementation = TService>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
         void AddSingleton();
 
         /**
          * @brief Register a scoped service using the default activation strategy.
          */
-        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        template<class TService, class TImplementation = TService>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
         void AddScoped();
 
         /**
          * @brief Register a transient service using the default activation strategy.
          */
-        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        template<class TService, class TImplementation = TService>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
         void AddTransient();
 
         /**
          * @brief Register a singleton that reuses an existing instance.
          */
-        template<IService TService>
+        template<class TService>
+            requires IService<TService>
         void AddSingleton(const std::shared_ptr<TService>& instance);
 
         /**
          * @brief Register a scoped service that reuses an existing instance.
          */
-        template<IService TService>
+        template<class TService>
+            requires IService<TService>
         void AddScoped(const std::shared_ptr<TService>& instance);
 
         /**
          * @brief Register a transient service that reuses an existing instance.
          */
-        template<IService TService>
+        template<class TService>
+            requires IService<TService>
         void AddTransient(const std::shared_ptr<TService>& instance);
 
         /**
          * @brief Register a singleton that resolves instances via a custom factory.
          */
-        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        template<class TService, class TImplementation = TService>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
         void AddSingleton(std::function<std::shared_ptr<TService>(ServiceLocator&)> factory);
 
         /**
          * @brief Register a scoped service that resolves instances via a custom factory.
          */
-        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        template<class TService, class TImplementation = TService>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
         void AddScoped(std::function<std::shared_ptr<TService>(ServiceLocator&)> factory);
 
         /**
          * @brief Register a transient service that resolves instances via a custom factory.
          */
-        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        template<class TService, class TImplementation = TService>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
         void AddTransient(std::function<std::shared_ptr<TService>(ServiceLocator&)> factory);
 
         /**
          * @brief Create the root service provider for the configured services.
          */
         std::shared_ptr<ServiceProvider> BuildServiceProvider();
-
-        /**
-         * @brief Read-only view of the registered descriptors.
-         */
-        const detail::ServiceRegistry& GetRegistry() const noexcept { return registry; }
 
     private:
         /**
@@ -102,7 +109,7 @@ namespace TGE
         /**
          * @brief Accumulates descriptors prior to provider construction.
          */
-        detail::ServiceRegistry registry;
+        std::unique_ptr<detail::ServiceRegistry> registry;
     };
 }
 

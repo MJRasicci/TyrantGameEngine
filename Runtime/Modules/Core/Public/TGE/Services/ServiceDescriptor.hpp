@@ -36,55 +36,64 @@ namespace TGE
         /**
          * @brief Create a singleton descriptor using the default activator.
          */
-        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        template<class TService, class TImplementation = TService>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
         static ServiceDescriptor Singleton();
 
         /**
          * @brief Create a scoped descriptor using the default activator.
          */
-        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        template<class TService, class TImplementation = TService>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
         static ServiceDescriptor Scoped();
 
         /**
          * @brief Create a transient descriptor using the default activator.
          */
-        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        template<class TService, class TImplementation = TService>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
         static ServiceDescriptor Transient();
 
         /**
          * @brief Create a singleton descriptor backed by an existing instance.
          */
-        template<IService TService>
+        template<class TService>
+            requires IService<TService>
         static ServiceDescriptor Singleton(const std::shared_ptr<TService>& instance);
 
         /**
          * @brief Create a scoped descriptor backed by an existing instance.
          */
-        template<IService TService>
+        template<class TService>
+            requires IService<TService>
         static ServiceDescriptor Scoped(const std::shared_ptr<TService>& instance);
 
         /**
          * @brief Create a transient descriptor backed by an existing instance.
          */
-        template<IService TService>
+        template<class TService>
+            requires IService<TService>
         static ServiceDescriptor Transient(const std::shared_ptr<TService>& instance);
 
         /**
          * @brief Create a singleton descriptor that delegates activation to a user-supplied factory.
          */
-        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        template<class TService, class TImplementation = TService>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
         static ServiceDescriptor Singleton(std::function<std::shared_ptr<TService>(ServiceLocator&)> factory);
 
         /**
          * @brief Create a scoped descriptor that delegates activation to a user-supplied factory.
          */
-        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        template<class TService, class TImplementation = TService>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
         static ServiceDescriptor Scoped(std::function<std::shared_ptr<TService>(ServiceLocator&)> factory);
 
         /**
          * @brief Create a transient descriptor that delegates activation to a user-supplied factory.
          */
-        template<IService TService, IServiceImplementation<TService> TImplementation = TService>
+        template<class TService, class TImplementation = TService>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
         static ServiceDescriptor Transient(std::function<std::shared_ptr<TService>(ServiceLocator&)> factory);
 
         /**
@@ -124,16 +133,20 @@ namespace TGE
         std::shared_ptr<TService> CastToService(const ActivationHandle& instance) const;
 
     private:
-        template<IService TService, IServiceImplementation<TService> TImplementation>
+        template<class TService, class TImplementation>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
         static ServiceDescriptor Create(ServiceLifetime lifetime);
 
-        template<IService TService>
+        template<class TService>
+            requires IService<TService>
         static ServiceDescriptor Create(ServiceLifetime lifetime, const std::shared_ptr<TService>& instance);
 
-        template<IService TService, IServiceImplementation<TService> TImplementation>
+        template<class TService, class TImplementation>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
         static ServiceDescriptor Create(ServiceLifetime lifetime, std::function<std::shared_ptr<TService>(ServiceLocator&)> factory);
 
-        template<IService TService, IServiceImplementation<TService> TImplementation>
+        template<class TService, class TImplementation>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
         static void* AdaptService(void* instance) noexcept;
 
         template<class TImplementation>
