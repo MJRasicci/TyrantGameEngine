@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Logging/LogMessage.hpp"
+#include "TGE/Logging/LogMessage.hpp"
 
 #include <string_view>
 

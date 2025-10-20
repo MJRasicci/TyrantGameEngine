@@ -1,4 +1,4 @@
-#include "Logging/Sinks/ConsoleLogSink.hpp"
+#include "TGE/Logging/Sinks/ConsoleLogSink.hpp"
 
 #include <ostream>
 #include <string_view>

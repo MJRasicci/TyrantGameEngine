@@ -13,11 +13,11 @@
     #include <cxxabi.h>
 #endif
 
-#include "Export.hpp"
-#include "LogLevel.hpp"
-#include "LogMessage.hpp"
-#include "LoggingOptions.hpp"
-#include "GlobalLogger.hpp"
+#include "TGE/Core/Export.hpp"
+#include "TGE/Logging/LogLevel.hpp"
+#include "TGE/Logging/LogMessage.hpp"
+#include "TGE/Logging/LoggingOptions.hpp"
+#include "TGE/Logging/GlobalLogger.hpp"
 #include "Services/ServiceTraits.hpp"
 
 #include <memory>

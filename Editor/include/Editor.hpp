@@ -1,7 +1,8 @@
 #pragma once
 
-#include "Logging/GlobalLogger.hpp"
-#include "Logging/Logger.hpp"
+#include "TGE/Logging/GlobalLogger.hpp"
+#include "TGE/Logging/Logger.hpp"
+#include "TGE/Logging/LoggingOptions.hpp"
 #include "Services/ServiceHost.hpp"
 
 namespace TGE
