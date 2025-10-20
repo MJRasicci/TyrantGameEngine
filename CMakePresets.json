@@ -103,7 +103,9 @@
             "name": "debug-base",
             "hidden": true,
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
+                "CMAKE_BUILD_TYPE": "Debug",
+                "TGE_BUILD_DOCS": false,
+                "TGE_BUILD_TESTS": true
             }
         },
         {
@@ -111,7 +113,9 @@
             "hidden": true,
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
-                "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON"
+                "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
+                "TGE_BUILD_DOCS": true,
+                "TGE_BUILD_TESTS": true
             }
         },
         { "name": "windows-x64-debug",     "displayName": "Windows x64 Debug",     "inherits": [ "windows-base", "x64-base",   "debug-base"   ] },

@@ -33,8 +33,8 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 
 # Options
 TGE_OPTION(TGE_BUILD_SHARED BOOL FALSE "TRUE to build the runtime as a shared library, FALSE to build the runtime for static linkage")
-TGE_OPTION(TGE_BUILD_DOCS BOOL TRUE "TRUE to build the documentation, FALSE to not (requires doxygen)")
-TGE_OPTION(TGE_BUILD_TESTS BOOL TRUE "Enable building and running the test suite")
+TGE_OPTION(TGE_BUILD_DOCS BOOL FALSE "TRUE to build the documentation, FALSE to not (requires doxygen)")
+TGE_OPTION(TGE_BUILD_TESTS BOOL FALSE "TRUE to enable building the test suite")
 
 # Add Subdirectories
 add_subdirectory("Runtime")
