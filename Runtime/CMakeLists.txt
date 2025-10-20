@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.25)
 # Per-module options are auto-created by TGE_MODULE()
 
 # Register modules
-# Core module lives at Runtime/Core/{include,source}
+# Core module lives at Runtime/Modules/Core/{Public,Private}
 TGE_MODULE(Core REQUIRED)
 
 # In future:
@@ -55,10 +55,11 @@ if(_tge_pub_inc_dirs)
     # Deduplicate
     list(REMOVE_DUPLICATES _tge_pub_inc_dirs)
     foreach(_dir IN LISTS _tge_pub_inc_dirs)
-        if(EXISTS "${_dir}")
-            # Install into include/TGE while preserving subfolders under each module's include root
-            install(DIRECTORY "${_dir}/" DESTINATION include/TGE FILES_MATCHING
-                    PATTERN "*.h" PATTERN "*.hpp" PATTERN "*.hh" PATTERN "*.hxx")
+        set(_tge_subdir "${_dir}/TGE")
+        if(EXISTS "${_tge_subdir}")
+            # Install into include/TGE while preserving the module's public hierarchy
+            install(DIRECTORY "${_tge_subdir}/" DESTINATION include/TGE FILES_MATCHING
+                    PATTERN "*.h" PATTERN "*.hpp" PATTERN "*.hh" PATTERN "*.hxx" PATTERN "*.inl")
         endif()
     endforeach()
 endif()

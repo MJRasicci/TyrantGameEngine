@@ -1,4 +1,4 @@
-#include "Logging/GlobalLogger.hpp"
+#include "TGE/Logging/GlobalLogger.hpp"
 
 #include <utility>
 
