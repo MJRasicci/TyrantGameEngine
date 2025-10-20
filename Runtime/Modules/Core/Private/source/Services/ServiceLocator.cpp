@@ -5,8 +5,9 @@
 #include <vector>
 
 #include "TGE/Services/ServiceLocator.hpp"
-#include "TGE/Services/ServiceRegistry.hpp"
 #include "TGE/Services/ServiceDescriptor.hpp"
+
+#include "Internal/Services/ServiceRegistry.hpp"
 
 namespace
 {

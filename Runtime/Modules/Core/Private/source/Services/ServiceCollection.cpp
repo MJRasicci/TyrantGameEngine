@@ -4,7 +4,8 @@
 
 #include "TGE/Services/ServiceCollection.hpp"
 #include "TGE/Services/ServiceProvider.hpp"
-#include "TGE/Services/ServiceRegistry.hpp"
+
+#include "Internal/Services/ServiceRegistry.hpp"
 
 namespace TGE
 {

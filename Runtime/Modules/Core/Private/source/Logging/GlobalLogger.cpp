@@ -1,6 +1,6 @@
-#include "TGE/Logging/GlobalLogger.hpp"
-
 #include <utility>
+
+#include "Internal/Logging/GlobalLogger.hpp"
 
 namespace TGE {
 

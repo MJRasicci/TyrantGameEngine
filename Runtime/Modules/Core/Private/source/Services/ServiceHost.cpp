@@ -1,9 +1,10 @@
 #include <memory>
 #include <stdexcept>
 
-#include "TGE/Logging/GlobalLogger.hpp"
 #include "TGE/Logging/Logger.hpp"
 #include "TGE/Services/ServiceHost.hpp"
+
+#include "Internal/Logging/GlobalLogger.hpp"
 
 namespace TGE {
 
