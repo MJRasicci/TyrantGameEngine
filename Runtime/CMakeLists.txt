@@ -65,6 +65,26 @@ if(_tge_pub_inc_dirs)
     endforeach()
 endif()
 
+# Install the generated feature configuration selected for this runtime.
+install(
+    FILES "${TGE_GENERATED_INCLUDE_DIR}/TGE/Features.hpp"
+    DESTINATION include/TGE)
+
+# Public asynchronous APIs use stdexec when the active standard library does
+# not yet provide the C++26 execution facilities. Package the pinned headers so
+# installed consumers use the same backend as the runtime.
+if(TGE_STDEXEC_SOURCE_DIR)
+    install(
+        DIRECTORY
+            "${TGE_STDEXEC_SOURCE_DIR}/include/stdexec"
+            "${TGE_STDEXEC_SOURCE_DIR}/include/exec"
+        DESTINATION include)
+    install(
+        FILES "${TGE_STDEXEC_SOURCE_DIR}/LICENSE.txt"
+        DESTINATION share/licenses/TyrantGameEngine
+        RENAME stdexec-LICENSE.txt)
+endif()
+
 # Libraries
 install(TARGETS tge_runtime_static
         ARCHIVE DESTINATION lib

@@ -1,50 +1,44 @@
 #include "Editor.hpp"
 
-#include <stdexcept>
+#include <utility>
 
 #if !TGE_HAS_REFLECTION_DI
-TGE_DECLARE_SERVICE_DEPENDENCIES(Editor, TGE::InjectLocator());
+TGE_DECLARE_SERVICE_DEPENDENCIES(
+    Editor,
+    TGE::Inject<TGE::Logger<Editor>>(),
+    TGE::Inject<TGE::ApplicationLifetime>());
 #endif
 
-Editor::Editor(TGE::ServiceLocator& locator)
+Editor::Editor(
+    std::shared_ptr<TGE::Logger<Editor>> logger,
+    std::shared_ptr<TGE::ApplicationLifetime> lifetime)
+    : logger(std::move(logger)),
+      lifetime(std::move(lifetime))
 {
-    auto* providerLocator = dynamic_cast<TGE::ServiceProvider*>(&locator);
-
-    if (!providerLocator)
-    {
-        throw std::invalid_argument("Editor requires a ServiceProvider-backed locator.");
-    }
-
-    provider = providerLocator->shared_from_this();
 }
 
-void Editor::Run()
+TGE::Task<void> Editor::StartAsync(std::stop_token)
 {
-    Start();
-}
-
-void Editor::ConfigureServices(TGE::ServiceCollection& services)
-{
-    services.AddTransient<TGE::Logger<Editor>>();
-}
-
-void Editor::OnStart()
-{
-    logger = provider->GetRequiredService<TGE::Logger<Editor>>();
     logger->Info("Starting Editor...");
+
+    // The editor has no event loop yet, so this placeholder host completes one
+    // lifecycle immediately after proving startup succeeded.
+    lifetime->RequestStop();
+    co_return;
 }
 
-void Editor::OnStop()
+TGE::Task<void> Editor::StopAsync()
 {
     logger->Info("Stopping Editor...");
+    co_return;
 }
 
 int main()
 {
-    TGE::ServiceCollection services;
-    services.AddTransient<Editor>();
+    auto application = TGE::Application::Create();
 
-    auto provider = services.BuildServiceProvider();
-    auto editor = provider->GetRequiredService<Editor>();
-    editor->Run();
+    application.Services().AddTransient<TGE::Logger<Editor>>();
+    application.Services().AddHostedService<Editor>();
+
+    return application.Run();
 }

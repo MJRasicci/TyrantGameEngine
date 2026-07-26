@@ -99,6 +99,14 @@ namespace
         std::string payload;
     };
 
+    struct ThrowingService
+    {
+        ThrowingService()
+        {
+            throw std::runtime_error("construction failed");
+        }
+    };
+
     struct OffsetBase
     {
         virtual ~OffsetBase() = default;
@@ -324,6 +332,19 @@ TEST(ServiceLocatorTests, SupportsExistingInstanceRegistrations)
     auto resolved = provider->GetRequiredService<FactoryService>();
     EXPECT_EQ(resolved, instance);
     EXPECT_EQ(resolved->payload, "from-instance");
+}
+
+TEST(ServiceLocatorTests, RecoversAfterServiceActivationThrows)
+{
+    TGE::ServiceCollection collection;
+    collection.AddTransient<ThrowingService>();
+    collection.AddSingleton<SingletonService>();
+    auto provider = collection.BuildServiceProvider();
+
+    EXPECT_THROW(
+        provider->GetRequiredService<ThrowingService>(),
+        std::runtime_error);
+    EXPECT_NO_THROW(provider->GetRequiredService<SingletonService>());
 }
 
 TEST(ServiceLocatorTests, PreservesImplementationAddressForAdjustedBasePointers)

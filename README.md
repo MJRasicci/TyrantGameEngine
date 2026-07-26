@@ -14,6 +14,7 @@ Tyrant Game Engine (TGE) is a modular, data-driven runtime focused on rapid iter
 - [Build from Source](#build-from-source)
   - [Using CMake Presets](#using-cmake-presets)
   - [Reflection-generated dependency injection](#reflection-generated-dependency-injection)
+  - [Asynchronous execution backend](#asynchronous-execution-backend)
   - [Running Tests and Benchmarks](#running-tests-and-benchmarks)
   - [Packaging](#packaging)
   - [Workflow Shortcuts](#workflow-shortcuts)
@@ -29,11 +30,16 @@ TGE emphasizes clean abstractions, testability, and extensible subsystems so new
 
 Core build requirements:
 - **C/C++ Compiler**
-  - Windows: Microsoft Visual C++ (MSVC)
-  - macOS: Clang (via Xcode Command Line Tools)
-  - Linux: GCC or Clang
+  - Windows: Microsoft Visual C++ (MSVC) with C++26/latest mode
+  - macOS: Apple Clang with C++26/2c mode
+  - Linux: GCC or Clang with C++26/2c mode
 - **[CMake](https://cmake.org/)** (3.25+ required)
 - **[Ninja](https://ninja-build.org/)**
+
+TGE requires C++26 language mode for every target. Because compiler and
+standard-library vendors ship individual C++26 facilities incrementally, CMake
+also probes features such as reflection and the execution control library
+instead of inferring support from a compiler version alone.
 
 Optional tooling:
 - **[Doxygen](https://www.doxygen.nl/)** and **[Graphviz](https://graphviz.org/)** for generating API documentation
@@ -114,14 +120,15 @@ surface used by its service activator. The `TGE_REFLECTION_DI` CMake setting
 controls the result:
 
 - `AUTO` (default) enables reflection when the probe succeeds and otherwise
-  keeps the portable C++23 traits-based activator.
+  keeps the portable traits-based activator.
 - `ON` requires reflection and stops configuration with a clear error when the
   toolchain cannot provide it.
 - `OFF` skips the probe and always uses the portable activator.
 
-The reflected path currently requires the `-freflection` compiler option. TGE's
-CMake targets propagate that option, C++26, and the public feature definition to
-in-tree consumers automatically.
+On GCC and Clang implementations that require it, the reflected path uses the
+`-freflection` compiler option. TGE's CMake targets propagate the selected
+compiler options and generated feature configuration to in-tree consumers
+automatically.
 
 A service implementation with one public, non-copy, non-move constructor needs
 no additional metadata:
@@ -157,6 +164,23 @@ Reflection-generated activation currently supports `std::shared_ptr<T>`,
 The service locator forms are retained for compatibility; ordinary services
 should prefer explicit typed dependencies. Builds using the fallback continue
 to use `TGE_DECLARE_SERVICE_DEPENDENCIES`.
+
+### Asynchronous execution backend
+
+TGE's application lifecycle follows the C++26 sender/receiver execution model.
+The `TGE_EXECUTION_BACKEND` CMake setting selects its implementation:
+
+- `AUTO` (default) uses native `std::execution` when the standard library
+  provides senders, `std::execution::task`, and
+  `std::this_thread::sync_wait`; otherwise it uses the compatibility backend.
+- `NATIVE` requires those native C++26 library facilities and fails
+  configuration when they are missing.
+- `STDEXEC` forces TGE's pinned NVIDIA stdexec compatibility backend.
+
+The compatibility backend is downloaded during configuration and packaged with
+installed builds. Public code uses `TGE::Task<T>` and
+`TGE::Execution::SyncWait`, so consumers do not select a backend independently
+from the runtime they link.
 
 ### Running Tests and Benchmarks
 
@@ -208,7 +232,60 @@ This structure keeps temporary and distributable assets separate from source, si
 
 ## Usage Instructions
 
-After building documentation presets, open `artifacts/docs/html/index.html` for full engine usage instructions, API references, and tutorials.
+`TGE::Application` is the concrete composition root. Register ordinary
+dependencies and one or more `TGE::IHostedService` implementations, then choose
+the blocking or asynchronous entrypoint:
+
+```cpp
+#include <TGE/Core.hpp>
+
+class Tool final : public TGE::IHostedService
+{
+public:
+    explicit Tool(std::shared_ptr<TGE::ApplicationLifetime> lifetime)
+        : lifetime(std::move(lifetime))
+    {
+    }
+
+    TGE::Task<void> StartAsync(std::stop_token) override
+    {
+        // Perform startup or launch long-running work.
+        lifetime->RequestStop();
+        co_return;
+    }
+
+    TGE::Task<void> StopAsync() override
+    {
+        // Release lifecycle-owned resources.
+        co_return;
+    }
+
+private:
+    std::shared_ptr<TGE::ApplicationLifetime> lifetime;
+};
+
+TGE_DECLARE_SERVICE_DEPENDENCIES(
+    Tool,
+    TGE::Inject<TGE::ApplicationLifetime>());
+
+int main()
+{
+    auto application = TGE::Application::Create();
+    application.Services().AddHostedService<Tool>();
+    return application.Run();
+}
+```
+
+`Run()` blocks the calling thread around the canonical `RunAsync()` operation.
+Hosted services start in registration order and stop in reverse order. A
+startup failure stops every service that previously started successfully, and
+shutdown continues through the remaining services if one stop operation fails.
+Applications can request shutdown from any thread through
+`Application::RequestStop` or the injected `ApplicationLifetime`; lifecycle
+continuations remain on the application task's execution scheduler.
+
+After building documentation presets, open `artifacts/docs/html/index.html` for
+the generated API reference.
 
 [(Back to top)](#table-of-contents)
 

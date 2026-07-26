@@ -10,9 +10,11 @@
 #include <memory>
 #include <stdexcept>
 #include <typeindex>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
+#include "TGE/Application/IHostedService.hpp"
 #include "TGE/Export.hpp"
 #include "TGE/Services/ServiceDescriptor.hpp"
 
@@ -96,6 +98,49 @@ namespace TGE
         void AddTransient(std::function<std::shared_ptr<TService>(ServiceLocator&)> factory);
 
         /**
+         * @brief Register a singleton service managed by Application lifecycle.
+         *
+         * Hosted services are started in registration order and stopped in
+         * reverse registration order.
+         */
+        template<class TService>
+            requires IService<TService> &&
+                     std::derived_from<TService, IHostedService> &&
+                     (!std::is_abstract_v<TService>)
+        void AddHostedService();
+
+        /**
+         * @brief Test whether a service type already has a registration.
+         */
+        template<class TService>
+            requires IService<TService>
+        bool Contains() const noexcept;
+
+        /**
+         * @brief Add a singleton only when the service type is unregistered.
+         * @return true when the service was added.
+         */
+        template<class TService, class TImplementation = TService>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
+        bool TryAddSingleton();
+
+        /**
+         * @brief Add an existing singleton only when its type is unregistered.
+         * @return true when the service was added.
+         */
+        template<class TService>
+            requires IService<TService>
+        bool TryAddSingleton(const std::shared_ptr<TService>& instance);
+
+        /**
+         * @brief Add a transient only when the service type is unregistered.
+         * @return true when the service was added.
+         */
+        template<class TService, class TImplementation = TService>
+            requires IService<TService> && IServiceImplementation<TService, TImplementation>
+        bool TryAddTransient();
+
+        /**
          * @brief Create the root service provider for the configured services.
          */
         std::shared_ptr<ServiceProvider> BuildServiceProvider();
@@ -105,6 +150,12 @@ namespace TGE
          * @brief Insert a descriptor into the registry with duplicate detection.
          */
         void Register(ServiceDescriptor descriptor);
+
+        void RegisterHostedService(
+            ServiceDescriptor descriptor,
+            std::function<std::shared_ptr<IHostedService>(ServiceLocator&)> factory);
+
+        bool Contains(std::type_index serviceType) const noexcept;
 
         /**
          * @brief Accumulates descriptors prior to provider construction.

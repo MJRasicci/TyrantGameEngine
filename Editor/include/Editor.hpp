@@ -2,48 +2,33 @@
 
 #include "TGE/Core.hpp"
 
-namespace TGE
-{
-    class ServiceCollection;
-    class ServiceLocator;
-}
-
 #include <memory>
+#include <stop_token>
 
 /**
- * @brief Entry point for running the Tyrant editor application.
+ * @brief Placeholder lifecycle service for the Tyrant editor.
  */
-class Editor : public TGE::ServiceHost
+class Editor final : public TGE::IHostedService
 {
 public:
     /**
-     * @brief Builds the editor using services resolved from the host provider.
-     * @param locator Root service locator supplied by the application container.
+     * @brief Construct the editor with application-managed dependencies.
      */
-    explicit Editor(TGE::ServiceLocator& locator);
+    Editor(
+        std::shared_ptr<TGE::Logger<Editor>> logger,
+        std::shared_ptr<TGE::ApplicationLifetime> lifetime);
 
     /**
-     * @brief Executes the editor main loop.
+     * @brief Start the editor service.
      */
-    void Run();
-
-protected:
-    /**
-     * @brief Registers editor specific services with the dependency injection container.
-     * @param services Mutable service registry used to configure the provider.
-     */
-    void ConfigureServices(TGE::ServiceCollection& services) override;
+    TGE::Task<void> StartAsync(std::stop_token stopping) override;
 
     /**
-     * @brief Captures service references after the host provider has been constructed.
+     * @brief Stop the editor service.
      */
-    void OnStart() override;
-
-    /**
-     * @brief Ensures logging infrastructure drains buffered messages before shutdown.
-     */
-    void OnStop() override;
+    TGE::Task<void> StopAsync() override;
 
 private:
     std::shared_ptr<TGE::Logger<Editor>> logger;
+    std::shared_ptr<TGE::ApplicationLifetime> lifetime;
 };

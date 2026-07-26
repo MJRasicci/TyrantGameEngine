@@ -37,7 +37,7 @@ ${BOLD}Options:${RESET}
   -r, --required    Only install required packages (skip docs & test/benchmark deps)
 
 ${BOLD}Required dependencies:${RESET}
-  * Xcode Command Line Tools
+  * Xcode Command Line Tools with C++26/2c mode
   * Homebrew
   * ninja
   * cmake

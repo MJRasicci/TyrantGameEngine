@@ -36,7 +36,7 @@ ${BOLD}Options:${RESET}
   -r, --required    Only install required packages (skip docs & test/benchmark deps)
 
 ${BOLD}Required dependencies:${RESET}
-  * GCC / Clang toolchain (via distro meta-packages)
+  * GCC / Clang toolchain with C++26 mode (via distro meta-packages)
   * ninja
   * cmake
 

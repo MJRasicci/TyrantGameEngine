@@ -53,22 +53,25 @@ namespace TGE
 
     ServiceLocator::ResolutionResult ServiceLocator::Resolve(std::type_index type, bool required)
     {
-        std::vector<std::type_index> localPath;
-        auto* previousPath = activePath;
-
-        if (previousPath == nullptr)
+        if (activePath)
         {
-            activePath = &localPath;
+            return ResolveInternal(type, *activePath, required);
         }
 
-        auto result = ResolveInternal(type, *activePath, required);
+        std::vector<std::type_index> localPath;
+        activePath = &localPath;
 
-        if (previousPath == nullptr)
+        try
+        {
+            auto result = ResolveInternal(type, localPath, required);
+            activePath = nullptr;
+            return result;
+        }
+        catch (...)
         {
             activePath = nullptr;
+            throw;
         }
-
-        return result;
     }
 
     ServiceLocator::ResolutionResult ServiceLocator::ResolveInternal(std::type_index type, std::vector<std::type_index>& path, bool required)
@@ -102,8 +105,18 @@ namespace TGE
         }
 
         path.push_back(descriptor->GetServiceType());
-        auto instance = descriptor->Activate(*this);
-        path.pop_back();
+        ActivationHandle instance;
+
+        try
+        {
+            instance = descriptor->Activate(*this);
+            path.pop_back();
+        }
+        catch (...)
+        {
+            path.pop_back();
+            throw;
+        }
 
         CacheInstance(lifetime, descriptor->GetServiceType(), instance);
 
@@ -174,4 +187,3 @@ namespace TGE
         }
     }
 }
-

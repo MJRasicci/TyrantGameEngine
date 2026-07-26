@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
 project(TyrantGameEngine VERSION 2.0.0.0 LANGUAGES CXX)
 include(./CMake/Tyrant.cmake)
+include(CheckCXXSourceCompiles)
+include(FetchContent)
+
+find_package(Threads REQUIRED)
 
 # Define version numbers
 set(TGE_VERSION_MAJOR ${CMAKE_PROJECT_VERSION_MAJOR})
@@ -17,11 +21,13 @@ set(CPACK_PACKAGE_VERSION_MINOR ${CMAKE_PROJECT_VERSION_MINOR})
 set(CPACK_PACKAGE_VERSION_PATCH ${CMAKE_PROJECT_VERSION_PATCH})
 include(CPack)
 
-# Set the portable baseline. Reflection support is probed below and promotes
-# participating targets to C++26 only when the required implementation exists.
-set(CMAKE_CXX_STANDARD 23)
+# TGE intentionally targets the current C++ standard. Individual C++26
+# facilities are still probed below because compiler and standard-library
+# implementations ship them independently.
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(TGE_CXX_STANDARD 26)
 
 # Enable folders in IDEs to organize targets
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -42,6 +48,12 @@ TGE_OPTION(
   AUTO
   "C++26 reflection-generated service activation: AUTO, ON, or OFF"
   AUTO ON OFF)
+TGE_OPTION(
+  TGE_EXECUTION_BACKEND
+  STRING
+  AUTO
+  "Asynchronous execution backend: AUTO, NATIVE, or STDEXEC"
+  AUTO NATIVE STDEXEC)
 
 string(TOUPPER "${TGE_REFLECTION_DI}" TGE_REFLECTION_DI)
 set(TGE_REFLECTION_DI "${TGE_REFLECTION_DI}" CACHE STRING
@@ -53,21 +65,25 @@ if(NOT TGE_REFLECTION_DI MATCHES "^(AUTO|ON|OFF)$")
     "TGE_REFLECTION_DI must be AUTO, ON, or OFF (received '${TGE_REFLECTION_DI}').")
 endif()
 
+string(TOUPPER "${TGE_EXECUTION_BACKEND}" TGE_EXECUTION_BACKEND)
+set(TGE_EXECUTION_BACKEND "${TGE_EXECUTION_BACKEND}" CACHE STRING
+    "Asynchronous execution backend: AUTO, NATIVE, or STDEXEC" FORCE)
+set_property(CACHE TGE_EXECUTION_BACKEND PROPERTY STRINGS AUTO NATIVE STDEXEC)
+
+if(NOT TGE_EXECUTION_BACKEND MATCHES "^(AUTO|NATIVE|STDEXEC)$")
+  message(FATAL_ERROR
+    "TGE_EXECUTION_BACKEND must be AUTO, NATIVE, or STDEXEC "
+    "(received '${TGE_EXECUTION_BACKEND}').")
+endif()
+
 set(_tge_reflection_di_supported FALSE)
 
-if(NOT TGE_REFLECTION_DI STREQUAL "OFF" AND
-   "cxx_std_26" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
-  include(CheckCXXSourceCompiles)
-
-  set(_tge_saved_cxx_standard "${CMAKE_CXX_STANDARD}")
-  set(_tge_saved_cxx_standard_required "${CMAKE_CXX_STANDARD_REQUIRED}")
-  set(_tge_saved_cxx_extensions "${CMAKE_CXX_EXTENSIONS}")
+if(NOT TGE_REFLECTION_DI STREQUAL "OFF")
   set(_tge_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
 
-  set(CMAKE_CXX_STANDARD 26)
-  set(CMAKE_CXX_STANDARD_REQUIRED ON)
-  set(CMAKE_CXX_EXTENSIONS OFF)
-  string(APPEND CMAKE_REQUIRED_FLAGS " -freflection")
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    string(APPEND CMAKE_REQUIRED_FLAGS " -freflection")
+  endif()
 
   # Compiler changes in an existing build tree must never retain a stale probe.
   unset(TGE_COMPILER_HAS_CXX26_REFLECTION_DI CACHE)
@@ -124,9 +140,6 @@ if(NOT TGE_REFLECTION_DI STREQUAL "OFF" AND
     int main() {}
   ]=] TGE_COMPILER_HAS_CXX26_REFLECTION_DI)
 
-  set(CMAKE_CXX_STANDARD "${_tge_saved_cxx_standard}")
-  set(CMAKE_CXX_STANDARD_REQUIRED "${_tge_saved_cxx_standard_required}")
-  set(CMAKE_CXX_EXTENSIONS "${_tge_saved_cxx_extensions}")
   set(CMAKE_REQUIRED_FLAGS "${_tge_saved_required_flags}")
 
   if(TGE_COMPILER_HAS_CXX26_REFLECTION_DI)
@@ -137,38 +150,194 @@ endif()
 if(TGE_REFLECTION_DI STREQUAL "ON" AND NOT _tge_reflection_di_supported)
   message(FATAL_ERROR
     "TGE_REFLECTION_DI=ON requires a compiler and standard library with "
-    "C++26 reflection support compatible with -freflection.")
+    "the C++26 reflection facilities used by TGE.")
 endif()
 
 if(_tge_reflection_di_supported AND NOT TGE_REFLECTION_DI STREQUAL "OFF")
   set(TGE_REFLECTION_DI_ENABLED TRUE)
-  set(TGE_CXX_STANDARD 26)
   message(STATUS
     "TGE: enabling C++26 reflection-generated dependency injection")
 else()
   set(TGE_REFLECTION_DI_ENABLED FALSE)
-  set(TGE_CXX_STANDARD 23)
   message(STATUS
     "TGE: using portable traits-based dependency injection")
 endif()
 
-# Centralize language requirements so public headers are parsed with the same
-# feature gate and compiler options as the runtime that produced them.
+# Prefer the standard C++26 execution facilities when the active standard
+# library implements both senders and the coroutine task type.
+set(_tge_native_execution_supported FALSE)
+
+if(NOT TGE_EXECUTION_BACKEND STREQUAL "STDEXEC")
+  unset(TGE_COMPILER_HAS_NATIVE_CXX26_EXECUTION CACHE)
+  set(_tge_saved_required_libraries "${CMAKE_REQUIRED_LIBRARIES}")
+  set(CMAKE_REQUIRED_LIBRARIES Threads::Threads)
+
+  check_cxx_source_compiles([=[
+    #include <exception>
+    #include <execution>
+    #include <stdexcept>
+    #include <thread>
+    #include <tuple>
+    #include <version>
+
+    #if !defined(__cpp_lib_senders) || __cpp_lib_senders < 202506L
+      #error "C++26 senders are unavailable."
+    #endif
+
+    #if !defined(__cpp_lib_task) || __cpp_lib_task < 202506L
+      #error "C++26 execution::task is unavailable."
+    #endif
+
+    std::execution::task<int> Answer()
+    {
+        co_return 42;
+    }
+
+    int main()
+    {
+        auto operation = std::execution::stopped_as_error(
+            Answer(),
+            std::make_exception_ptr(std::runtime_error("stopped")));
+        auto result = std::this_thread::sync_wait(std::move(operation));
+        return result && std::get<0>(*result) == 42 ? 0 : 1;
+    }
+  ]=] TGE_COMPILER_HAS_NATIVE_CXX26_EXECUTION)
+
+  set(CMAKE_REQUIRED_LIBRARIES "${_tge_saved_required_libraries}")
+
+  if(TGE_COMPILER_HAS_NATIVE_CXX26_EXECUTION)
+    set(_tge_native_execution_supported TRUE)
+  endif()
+endif()
+
+if(TGE_EXECUTION_BACKEND STREQUAL "NATIVE" AND
+   NOT _tge_native_execution_supported)
+  message(FATAL_ERROR
+    "TGE_EXECUTION_BACKEND=NATIVE requires C++26 std::execution senders, "
+    "std::execution::task, and std::this_thread::sync_wait.")
+endif()
+
+add_library(tge_execution_backend INTERFACE)
+add_library(TGE::execution_backend ALIAS tge_execution_backend)
+target_link_libraries(tge_execution_backend INTERFACE Threads::Threads)
+
+if(_tge_native_execution_supported AND
+   NOT TGE_EXECUTION_BACKEND STREQUAL "STDEXEC")
+  set(TGE_NATIVE_EXECUTION_ENABLED TRUE)
+  message(STATUS "TGE: using native C++26 std::execution")
+else()
+  set(TGE_NATIVE_EXECUTION_ENABLED FALSE)
+
+  # stdexec is a header-only reference implementation of the C++26 execution
+  # model. SOURCE_SUBDIR deliberately names a non-project directory so TGE can
+  # consume the headers without configuring stdexec's development dependencies.
+  FetchContent_Declare(
+    tge_stdexec
+    URL
+      https://github.com/NVIDIA/stdexec/archive/f7b08650de40b9789a1b9f45df37d7d0a8194f6d.tar.gz
+    URL_HASH
+      SHA256=b9b442a5c4482f69838fe1f18cbc79092487abf31093e76165ddcb9efaf29882
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR __tge_header_only)
+  FetchContent_MakeAvailable(tge_stdexec)
+
+  set(_tge_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
+  set(_tge_saved_required_includes "${CMAKE_REQUIRED_INCLUDES}")
+  set(_tge_saved_required_libraries "${CMAKE_REQUIRED_LIBRARIES}")
+  list(APPEND CMAKE_REQUIRED_INCLUDES "${tge_stdexec_SOURCE_DIR}/include")
+  set(CMAKE_REQUIRED_LIBRARIES Threads::Threads)
+
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    string(APPEND CMAKE_REQUIRED_FLAGS
+      " -fcoroutines -fconcepts-diagnostics-depth=10")
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    string(APPEND CMAKE_REQUIRED_FLAGS
+      " /Zc:__cplusplus /Zc:preprocessor /Zc:externConstexpr")
+  endif()
+
+  # Validate the compatibility path during configuration so unsupported
+  # bleeding-edge toolchain combinations fail with a focused diagnostic.
+  unset(TGE_COMPILER_HAS_STDEXEC_EXECUTION CACHE)
+  check_cxx_source_compiles([=[
+    #include <stdexec/execution.hpp>
+    #include <tuple>
+
+    stdexec::task<int> Answer()
+    {
+        co_return 42;
+    }
+
+    int main()
+    {
+        auto result = stdexec::sync_wait(Answer());
+        return result && std::get<0>(*result) == 42 ? 0 : 1;
+    }
+  ]=] TGE_COMPILER_HAS_STDEXEC_EXECUTION)
+
+  set(CMAKE_REQUIRED_FLAGS "${_tge_saved_required_flags}")
+  set(CMAKE_REQUIRED_INCLUDES "${_tge_saved_required_includes}")
+  set(CMAKE_REQUIRED_LIBRARIES "${_tge_saved_required_libraries}")
+
+  if(NOT TGE_COMPILER_HAS_STDEXEC_EXECUTION)
+    message(FATAL_ERROR
+      "The active C++26 toolchain provides neither TGE's required native "
+      "std::execution facilities nor a compatible stdexec implementation.")
+  endif()
+
+  target_include_directories(
+    tge_execution_backend
+    SYSTEM INTERFACE
+      $<BUILD_INTERFACE:${tge_stdexec_SOURCE_DIR}/include>
+      $<INSTALL_INTERFACE:include>)
+  target_compile_options(
+    tge_execution_backend
+    INTERFACE
+      $<$<COMPILE_LANG_AND_ID:CXX,GNU>:-fcoroutines;-fconcepts-diagnostics-depth=10>
+      $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/Zc:__cplusplus;/Zc:preprocessor;/Zc:externConstexpr;/bigobj>)
+
+  set(TGE_STDEXEC_SOURCE_DIR "${tge_stdexec_SOURCE_DIR}")
+  message(STATUS "TGE: using pinned stdexec compatibility backend")
+endif()
+
+if(TGE_REFLECTION_DI_ENABLED)
+  set(TGE_HAS_REFLECTION_DI_VALUE 1)
+else()
+  set(TGE_HAS_REFLECTION_DI_VALUE 0)
+endif()
+
+if(TGE_NATIVE_EXECUTION_ENABLED)
+  set(TGE_HAS_NATIVE_STD_EXECUTION_VALUE 1)
+  set(TGE_USES_STDEXEC_VALUE 0)
+else()
+  set(TGE_HAS_NATIVE_STD_EXECUTION_VALUE 0)
+  set(TGE_USES_STDEXEC_VALUE 1)
+endif()
+
+set(TGE_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
+configure_file(
+  Runtime/Modules/Core/Public/TGE/Features.hpp.in
+  "${TGE_GENERATED_INCLUDE_DIR}/TGE/Features.hpp"
+  @ONLY)
+
+# Centralize language requirements and capability selection so all public
+# headers are parsed with the same configuration as the runtime.
 add_library(tge_build_options INTERFACE)
 add_library(TGE::build_options ALIAS tge_build_options)
 target_compile_features(tge_build_options INTERFACE "cxx_std_${TGE_CXX_STANDARD}")
+target_include_directories(
+  tge_build_options
+  INTERFACE
+    $<BUILD_INTERFACE:${TGE_GENERATED_INCLUDE_DIR}>
+    $<INSTALL_INTERFACE:include>)
+target_link_libraries(
+  tge_build_options
+  INTERFACE TGE::execution_backend)
 
 if(TGE_REFLECTION_DI_ENABLED)
   target_compile_options(
     tge_build_options
-    INTERFACE $<$<COMPILE_LANGUAGE:CXX>:-freflection>)
-  target_compile_definitions(
-    tge_build_options
-    INTERFACE TGE_HAS_REFLECTION_DI=1)
-else()
-  target_compile_definitions(
-    tge_build_options
-    INTERFACE TGE_HAS_REFLECTION_DI=0)
+    INTERFACE
+      $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-freflection>)
 endif()
 
 # Add Subdirectories

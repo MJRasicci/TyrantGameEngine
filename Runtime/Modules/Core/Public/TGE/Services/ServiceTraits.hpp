@@ -14,9 +14,7 @@
 #include <tuple>
 #include <type_traits>
 
-#ifndef TGE_HAS_REFLECTION_DI
-    #define TGE_HAS_REFLECTION_DI 0
-#endif
+#include "TGE/Features.hpp"
 
 #if TGE_HAS_REFLECTION_DI
     #if !defined(__cpp_impl_reflection) || __cpp_impl_reflection < 202603L

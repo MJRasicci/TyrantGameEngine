@@ -8,12 +8,16 @@
 #include <memory>
 #include <typeindex>
 #include <unordered_map>
+#include <vector>
 
 #include "TGE/Export.hpp"
 #include "TGE/Services/ServiceLocator.hpp"
 
 namespace TGE
 {
+    class Application;
+    class IHostedService;
+
     /**
      * @class ServiceProvider
      * @brief Root service locator that owns singleton instances.
@@ -32,8 +36,11 @@ namespace TGE
         explicit ServiceProvider(std::shared_ptr<detail::ServiceRegistry> registry);
 
     private:
+        std::vector<std::shared_ptr<IHostedService>> GetHostedServices();
+
         std::unordered_map<std::type_index, ActivationHandle> singletonStorage;
 
+        friend class Application;
         friend class ServiceCollection;
         friend class ServiceScope;
     };
@@ -57,4 +64,3 @@ namespace TGE
         friend class ServiceProvider;
     };
 }
-

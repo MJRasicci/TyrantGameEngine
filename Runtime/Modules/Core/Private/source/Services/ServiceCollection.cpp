@@ -21,6 +21,8 @@ namespace TGE
         auto sharedRegistry = std::make_shared<detail::ServiceRegistry>();
         sharedRegistry->descriptors = std::move(registry->descriptors);
         sharedRegistry->implementationLookup = std::move(registry->implementationLookup);
+        sharedRegistry->hostedServiceFactories =
+            std::move(registry->hostedServiceFactories);
 
         return std::shared_ptr<ServiceProvider>(new ServiceProvider(std::move(sharedRegistry)));
     }
@@ -46,5 +48,17 @@ namespace TGE
         registry->descriptors.emplace(serviceType, std::move(descriptor));
         registry->implementationLookup.emplace(implementationType, serviceType);
     }
-}
 
+    void ServiceCollection::RegisterHostedService(
+        ServiceDescriptor descriptor,
+        std::function<std::shared_ptr<IHostedService>(ServiceLocator&)> factory)
+    {
+        Register(std::move(descriptor));
+        registry->hostedServiceFactories.emplace_back(std::move(factory));
+    }
+
+    bool ServiceCollection::Contains(std::type_index serviceType) const noexcept
+    {
+        return registry->descriptors.contains(serviceType);
+    }
+}
