@@ -26,12 +26,7 @@ void ServiceHost::Start()
 {
     // Initialize service collection and add logging services
     auto services = ServiceCollection();
-    services.AddSingleton<GlobalLogger>();
-    services.AddSingleton<ILogDispatcher, GlobalLogger>([](ServiceLocator& locator)
-    {
-        auto dispatcher = locator.GetRequiredService<GlobalLogger>();
-        return std::static_pointer_cast<ILogDispatcher>(dispatcher);
-    });
+    services.AddSingleton<ILogDispatcher, GlobalLogger>();
     services.AddTransient<Logger<ServiceHost>>();
 
     // Let derived class configure application services.
