@@ -42,6 +42,7 @@ endif()
 # Public convenience alias that points to the chosen linkage
 add_library(tge_runtime INTERFACE)
 add_library(TGE::runtime ALIAS tge_runtime)
+target_link_libraries(tge_runtime INTERFACE TGE::build_options)
 
 if(TGE_BUILD_SHARED)
   target_link_libraries(tge_runtime INTERFACE TGE::runtime_shared)

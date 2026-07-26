@@ -98,12 +98,80 @@ namespace
 
         std::string payload;
     };
+
+    struct OffsetBase
+    {
+        virtual ~OffsetBase() = default;
+
+        int padding = 17;
+    };
+
+    struct IOffsetService
+    {
+        virtual ~IOffsetService() = default;
+        virtual int Value() const = 0;
+    };
+
+    struct OffsetService final : OffsetBase, IOffsetService
+    {
+        int Value() const override
+        {
+            return padding;
+        }
+    };
+
+#if TGE_HAS_REFLECTION_DI
+    struct IReflectedDependency
+    {
+        virtual ~IReflectedDependency() = default;
+        virtual int Value() const = 0;
+    };
+
+    struct ReflectedDependency final : IReflectedDependency
+    {
+        int Value() const override
+        {
+            return 42;
+        }
+    };
+
+    struct ReflectedConsumer
+    {
+        ReflectedConsumer(
+            std::shared_ptr<IReflectedDependency> reflected,
+            std::shared_ptr<SingletonService> singleton)
+            : reflected(std::move(reflected)),
+              singleton(std::move(singleton))
+        {
+        }
+
+        std::shared_ptr<IReflectedDependency> reflected;
+        std::shared_ptr<SingletonService> singleton;
+    };
+
+    struct AnnotatedConsumer
+    {
+        AnnotatedConsumer() = default;
+
+        TGE_INJECT_CONSTRUCTOR
+        explicit AnnotatedConsumer(std::shared_ptr<SingletonService> singleton)
+            : singleton(std::move(singleton)),
+              usedAnnotatedConstructor(true)
+        {
+        }
+
+        std::shared_ptr<SingletonService> singleton;
+        bool usedAnnotatedConstructor = false;
+    };
+#endif
 }
 
+#if !TGE_HAS_REFLECTION_DI
 TGE_DECLARE_SERVICE_DEPENDENCIES(DependentService, TGE::Inject<SingletonService>());
 TGE_DECLARE_SERVICE_DEPENDENCIES(LocatorAwareService, TGE::InjectLocator());
 TGE_DECLARE_SERVICE_DEPENDENCIES(CyclicA, TGE::Inject<CyclicB>());
 TGE_DECLARE_SERVICE_DEPENDENCIES(CyclicB, TGE::Inject<CyclicA>());
+#endif
 
 TEST(ServiceLocatorTests, SingletonInstancesAreSharedAcrossScopes)
 {
@@ -166,7 +234,7 @@ TEST(ServiceLocatorTests, TransientInstancesAreNeverCached)
     EXPECT_NE(scopedFirst, scopedSecond);
 }
 
-TEST(ServiceLocatorTests, TraitsResolveServiceDependencies)
+TEST(ServiceLocatorTests, ResolvesConstructorDependencies)
 {
     SingletonService::nextId = 1;
 
@@ -183,7 +251,18 @@ TEST(ServiceLocatorTests, TraitsResolveServiceDependencies)
     EXPECT_EQ(dependent->dependency, singleton);
 }
 
-TEST(ServiceLocatorTests, TraitsInjectLocatorReference)
+TEST(ServiceLocatorTests, ThrowsWhenConstructorDependencyIsMissing)
+{
+    TGE::ServiceCollection collection;
+    collection.AddTransient<DependentService>();
+    auto provider = collection.BuildServiceProvider();
+
+    EXPECT_THROW(
+        provider->GetRequiredService<DependentService>(),
+        std::domain_error);
+}
+
+TEST(ServiceLocatorTests, InjectsLocatorReference)
 {
     TGE::ServiceCollection collection;
     collection.AddTransient<LocatorAwareService>();
@@ -246,3 +325,57 @@ TEST(ServiceLocatorTests, SupportsExistingInstanceRegistrations)
     EXPECT_EQ(resolved, instance);
     EXPECT_EQ(resolved->payload, "from-instance");
 }
+
+TEST(ServiceLocatorTests, PreservesImplementationAddressForAdjustedBasePointers)
+{
+    TGE::ServiceCollection collection;
+    collection.AddSingleton<IOffsetService, OffsetService>();
+    auto provider = collection.BuildServiceProvider();
+
+    auto service = provider->GetRequiredService<IOffsetService>();
+    auto implementation = provider->GetRequiredService<OffsetService>();
+
+    ASSERT_NE(service, nullptr);
+    ASSERT_NE(implementation, nullptr);
+    EXPECT_EQ(service.get(), static_cast<IOffsetService*>(implementation.get()));
+    EXPECT_EQ(service->Value(), 17);
+}
+
+#if TGE_HAS_REFLECTION_DI
+TEST(ServiceLocatorTests, ReflectionInjectsMultipleTypedDependenciesWithoutTraits)
+{
+    SingletonService::nextId = 1;
+
+    TGE::ServiceCollection collection;
+    collection.AddSingleton<IReflectedDependency, ReflectedDependency>();
+    collection.AddSingleton<SingletonService>();
+    collection.AddTransient<ReflectedConsumer>();
+    auto provider = collection.BuildServiceProvider();
+
+    auto consumer = provider->GetRequiredService<ReflectedConsumer>();
+
+    ASSERT_NE(consumer, nullptr);
+    ASSERT_NE(consumer->reflected, nullptr);
+    ASSERT_NE(consumer->singleton, nullptr);
+    EXPECT_EQ(consumer->reflected->Value(), 42);
+    EXPECT_EQ(
+        consumer->singleton,
+        provider->GetRequiredService<SingletonService>());
+}
+
+TEST(ServiceLocatorTests, ReflectionAnnotationSelectsConstructorOverload)
+{
+    TGE::ServiceCollection collection;
+    collection.AddSingleton<SingletonService>();
+    collection.AddTransient<AnnotatedConsumer>();
+    auto provider = collection.BuildServiceProvider();
+
+    auto consumer = provider->GetRequiredService<AnnotatedConsumer>();
+
+    ASSERT_NE(consumer, nullptr);
+    EXPECT_TRUE(consumer->usedAnnotatedConstructor);
+    EXPECT_EQ(
+        consumer->singleton,
+        provider->GetRequiredService<SingletonService>());
+}
+#endif

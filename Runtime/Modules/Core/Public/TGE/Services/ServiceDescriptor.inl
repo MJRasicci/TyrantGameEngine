@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <format>
 #include <functional>
 #include <stdexcept>
@@ -7,12 +8,170 @@
 #include <type_traits>
 #include <utility>
 
+#if TGE_HAS_REFLECTION_DI
+    #include <meta>
+#endif
+
 #include "TGE/Services/ServiceLocator.hpp"
 
 namespace TGE
 {
     namespace detail
     {
+        template<class TService>
+        ServiceDescriptor::ActivationHandle WrapExistingInstance(
+            const std::shared_ptr<TService>& existingInstance)
+        {
+            return std::shared_ptr<void>(
+                existingInstance, existingInstance.get());
+        }
+
+#if TGE_HAS_REFLECTION_DI
+        template<class>
+        inline constexpr bool AlwaysFalse = false;
+
+        template<class T>
+        struct SharedPointerDependency
+        {
+            static constexpr bool IsSupported = false;
+        };
+
+        template<class TService>
+        struct SharedPointerDependency<std::shared_ptr<TService>>
+        {
+            static constexpr bool IsSupported = true;
+            using ServiceType = TService;
+        };
+
+        /**
+         * Select the constructor used by reflection-generated activation.
+         *
+         * An explicit TGE_INJECT_CONSTRUCTOR annotation takes precedence.
+         * Without one, exactly one public non-copy, non-move constructor must
+         * be available. Deleted and inaccessible constructors are ignored.
+         */
+        template<class TImplementation>
+        consteval std::meta::info SelectInjectableConstructor()
+        {
+            std::meta::info candidate {};
+            std::meta::info annotated {};
+            std::size_t candidateCount = 0;
+            std::size_t annotatedCount = 0;
+
+            for (auto member : std::meta::members_of(
+                     ^^TImplementation,
+                     std::meta::access_context::unprivileged()))
+            {
+                if (!std::meta::is_constructor(member) ||
+                    !std::meta::is_public(member) ||
+                    std::meta::is_copy_constructor(member) ||
+                    std::meta::is_move_constructor(member) ||
+                    std::meta::is_deleted(member))
+                {
+                    continue;
+                }
+
+                candidate = member;
+                ++candidateCount;
+
+                if (!std::meta::annotations_of_with_type(
+                         member, ^^InjectConstructorAttribute).empty())
+                {
+                    annotated = member;
+                    ++annotatedCount;
+                }
+            }
+
+            if (annotatedCount == 1)
+            {
+                return annotated;
+            }
+
+            if (annotatedCount == 0 && candidateCount == 1)
+            {
+                return candidate;
+            }
+
+            return {};
+        }
+
+        template<class TParameter>
+        decltype(auto) ResolveReflectedDependency(ServiceLocator& locator)
+        {
+            if constexpr (SharedPointerDependency<TParameter>::IsSupported)
+            {
+                using TService =
+                    typename SharedPointerDependency<TParameter>::ServiceType;
+                return locator.template GetRequiredService<TService>();
+            }
+            else if constexpr (std::same_as<TParameter, ServiceLocator&>)
+            {
+                return (locator);
+            }
+            else if constexpr (std::same_as<TParameter, ServiceLocator*>)
+            {
+                return &locator;
+            }
+            else
+            {
+                static_assert(
+                    AlwaysFalse<TParameter>,
+                    "Reflection-generated service activation supports "
+                    "std::shared_ptr<T>, ServiceLocator&, and ServiceLocator* "
+                    "constructor parameters.");
+            }
+        }
+
+        template<class TService,
+                 class TImplementation,
+                 std::meta::info TConstructor,
+                 std::size_t... Indices>
+        ServiceDescriptor::ActivationHandle InstantiateFromReflection(
+            ServiceLocator& locator,
+            std::index_sequence<Indices...>)
+        {
+            auto instance = std::make_shared<TImplementation>(
+                ResolveReflectedDependency<
+                    typename [:std::meta::type_of(
+                        std::meta::parameters_of(TConstructor)[Indices]):]
+                >(locator)...);
+
+            return std::shared_ptr<void>(
+                instance, static_cast<void*>(instance.get()));
+        }
+
+        template<class TService, class TImplementation>
+        ServiceDescriptor::ActivationHandle ActivateUsingReflection(
+            ServiceLocator& locator,
+            const ServiceDescriptor&)
+        {
+            constexpr auto constructor =
+                SelectInjectableConstructor<TImplementation>();
+
+            if constexpr (constructor == std::meta::info {})
+            {
+                static_assert(
+                    AlwaysFalse<TImplementation>,
+                    "A reflected service implementation must expose exactly "
+                    "one public non-copy, non-move constructor, or mark "
+                    "exactly one constructor with "
+                    "TGE_INJECT_CONSTRUCTOR.");
+                return {};
+            }
+            else
+            {
+                constexpr std::size_t dependencyCount =
+                    std::meta::parameters_of(constructor).size();
+
+                return InstantiateFromReflection<
+                    TService,
+                    TImplementation,
+                    constructor>(
+                        locator,
+                        std::make_index_sequence<dependencyCount> {});
+            }
+        }
+#else
         template<class TTag>
         auto ResolveDependency(ServiceLocator& locator, TTag tag)
         {
@@ -32,14 +191,8 @@ namespace TGE
         {
             auto instance = std::make_shared<TImplementation>(
                 ResolveDependency(locator, std::get<Indices>(tuple))...);
-            std::shared_ptr<TService> service = instance;
-            return std::shared_ptr<void>(service, service.get());
-        }
-
-        template<class TService>
-        ServiceDescriptor::ActivationHandle WrapExistingInstance(const std::shared_ptr<TService>& existingInstance)
-        {
-            return std::shared_ptr<void>(existingInstance, existingInstance.get());
+            return std::shared_ptr<void>(
+                instance, static_cast<void*>(instance.get()));
         }
 
         template<class TService, class TImplementation>
@@ -50,6 +203,7 @@ namespace TGE
             return InstantiateFromTuple<TService, TImplementation>(
                 locator, dependencies, std::make_index_sequence<dependencyCount> {});
         }
+#endif
     }
 
     template<class TService, class TImplementation>
@@ -176,7 +330,11 @@ namespace TGE
             lifetime,
             typeid(TService),
             typeid(TImplementation),
+#if TGE_HAS_REFLECTION_DI
+            &detail::ActivateUsingReflection<TService, TImplementation>,
+#else
             &detail::ActivateUsingTraits<TService, TImplementation>,
+#endif
             {},
             {},
             &ServiceDescriptor::AdaptService<TService, TImplementation>,
@@ -232,7 +390,7 @@ namespace TGE
             lifetime,
             typeid(TService),
             typeid(TImplementation),
-            &detail::ActivateUsingTraits<TService, TImplementation>,
+            nullptr,
             std::move(wrapped),
             {},
             &ServiceDescriptor::AdaptService<TService, TImplementation>,
@@ -280,4 +438,3 @@ namespace TGE
     {
     }
 }
-

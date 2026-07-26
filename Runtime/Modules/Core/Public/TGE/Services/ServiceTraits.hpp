@@ -1,11 +1,10 @@
 /**
  * @file ServiceTraits.hpp
- * @brief Compile-time traits that describe service constructor dependencies.
+ * @brief Constructor-injection metadata shared by reflected and portable builds.
  *
- * The dependency injection container uses the dependency tuple declared for a
- * service implementation to resolve the constructor arguments required to
- * instantiate the service. A default, empty dependency list is supplied for
- * services that require no additional arguments.
+ * Reflection-enabled builds use the constructor annotation declared here.
+ * Portable builds use dependency-trait specializations to describe the
+ * constructor arguments resolved by the service container.
  */
 
 #pragma once
@@ -15,9 +14,36 @@
 #include <tuple>
 #include <type_traits>
 
+#ifndef TGE_HAS_REFLECTION_DI
+    #define TGE_HAS_REFLECTION_DI 0
+#endif
+
+#if TGE_HAS_REFLECTION_DI
+    #if !defined(__cpp_impl_reflection) || __cpp_impl_reflection < 202603L
+        #error "TGE reflection DI requires C++26 reflection support enabled with -freflection."
+    #endif
+#endif
+
 namespace TGE
 {
     class ServiceLocator;
+
+    /**
+     * @struct InjectConstructorAttribute
+     * @brief Annotation value type used to select an injectable constructor.
+     * @details
+     * A reflected implementation with multiple public constructors must mark
+     * exactly one constructor with TGE_INJECT_CONSTRUCTOR. Implementations with
+     * a single public, non-copy, non-move constructor need no annotation.
+     */
+    struct InjectConstructorAttribute final
+    {
+    };
+
+    /**
+     * @brief Annotation value reflected from TGE_INJECT_CONSTRUCTOR.
+     */
+    inline constexpr InjectConstructorAttribute InjectConstructor {};
 
     namespace detail
     {
@@ -115,3 +141,14 @@ namespace TGE
         };
 }
 
+/**
+ * @brief Select a constructor for C++26 reflection-generated activation.
+ * @details
+ * The macro expands to a C++26 annotation when reflection DI is enabled and
+ * to nothing for the portable traits-based fallback.
+ */
+#if TGE_HAS_REFLECTION_DI
+    #define TGE_INJECT_CONSTRUCTOR [[=TGE::InjectConstructor]]
+#else
+    #define TGE_INJECT_CONSTRUCTOR
+#endif

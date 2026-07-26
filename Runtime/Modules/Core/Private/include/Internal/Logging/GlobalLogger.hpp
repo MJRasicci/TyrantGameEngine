@@ -3,6 +3,7 @@
 #include "TGE/Logging/ILogDispatcher.hpp"
 #include "TGE/Logging/LoggingOptions.hpp"
 #include "TGE/Logging/LogMessage.hpp"
+#include "TGE/Services/ServiceTraits.hpp"
 
 #include <atomic>
 #include <condition_variable>
@@ -21,6 +22,7 @@ public:
     /**
      * @brief Creates a logger with default options (console sink, coloured output).
      */
+    TGE_INJECT_CONSTRUCTOR
     GlobalLogger();
 
     /**

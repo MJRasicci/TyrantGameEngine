@@ -12,7 +12,7 @@ endif()
 
 add_executable(tge_editor ${EDITOR_SOURCES})
 
-target_compile_features(tge_editor PUBLIC cxx_std_23)
+target_compile_features(tge_editor PUBLIC "cxx_std_${TGE_CXX_STANDARD}")
 target_include_directories(tge_editor
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

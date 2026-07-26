@@ -13,6 +13,7 @@ Tyrant Game Engine (TGE) is a modular, data-driven runtime focused on rapid iter
   - [Install Tyrant Game Engine](#install-tyrant-game-engine)
 - [Build from Source](#build-from-source)
   - [Using CMake Presets](#using-cmake-presets)
+  - [Reflection-generated dependency injection](#reflection-generated-dependency-injection)
   - [Running Tests and Benchmarks](#running-tests-and-benchmarks)
   - [Packaging](#packaging)
   - [Workflow Shortcuts](#workflow-shortcuts)
@@ -105,6 +106,57 @@ Build targets for the active preset:
 ```bash
 cmake --build --preset linux-x64-debug
 ```
+
+### Reflection-generated dependency injection
+
+TGE probes the active compiler for the C++26 reflection language and library
+surface used by its service activator. The `TGE_REFLECTION_DI` CMake setting
+controls the result:
+
+- `AUTO` (default) enables reflection when the probe succeeds and otherwise
+  keeps the portable C++23 traits-based activator.
+- `ON` requires reflection and stops configuration with a clear error when the
+  toolchain cannot provide it.
+- `OFF` skips the probe and always uses the portable activator.
+
+The reflected path currently requires the `-freflection` compiler option. TGE's
+CMake targets propagate that option, C++26, and the public feature definition to
+in-tree consumers automatically.
+
+A service implementation with one public, non-copy, non-move constructor needs
+no additional metadata:
+
+```cpp
+struct Renderer
+{
+    Renderer(
+        std::shared_ptr<IGpuDevice> device,
+        std::shared_ptr<IAssetStore> assets);
+};
+
+services.AddTransient<Renderer>();
+```
+
+When an implementation has multiple eligible constructors, select exactly one
+with the portable annotation macro:
+
+```cpp
+struct Renderer
+{
+    Renderer();
+
+    TGE_INJECT_CONSTRUCTOR
+    Renderer(
+        std::shared_ptr<IGpuDevice> device,
+        std::shared_ptr<IAssetStore> assets);
+};
+```
+
+Reflection-generated activation currently supports `std::shared_ptr<T>`,
+`TGE::ServiceLocator&`, and `TGE::ServiceLocator*` constructor parameters.
+The service locator forms are retained for compatibility; ordinary services
+should prefer explicit typed dependencies. Builds using the fallback continue
+to use `TGE_DECLARE_SERVICE_DEPENDENCIES`.
 
 ### Running Tests and Benchmarks
 

@@ -2,7 +2,9 @@
 
 #include <stdexcept>
 
+#if !TGE_HAS_REFLECTION_DI
 TGE_DECLARE_SERVICE_DEPENDENCIES(Editor, TGE::InjectLocator());
+#endif
 
 Editor::Editor(TGE::ServiceLocator& locator)
 {
