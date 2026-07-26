@@ -2,6 +2,7 @@
 
 #include <utility>
 
+#include "TGE/Options/OptionsBuilder.hpp"
 #include "TGE/Services/ServiceLocator.hpp"
 
 namespace TGE
@@ -127,5 +128,37 @@ namespace TGE
 
         AddTransient<TService, TImplementation>();
         return true;
+    }
+
+    template<OptionsType TOptions>
+    OptionsBuilder<TOptions> ServiceCollection::AddOptions(TOptions defaults)
+    {
+        const std::type_index optionsType = typeid(TOptions);
+        if (const auto existing = optionsMonitors.find(optionsType);
+            existing != optionsMonitors.end())
+        {
+            return OptionsBuilder<TOptions>(
+                std::static_pointer_cast<OptionsMonitor<TOptions>>(
+                    existing->second));
+        }
+
+        if (Contains<OptionsMonitor<TOptions>>() ||
+            Contains<IOptionsMonitor<TOptions>>())
+        {
+            throw std::logic_error(std::format(
+                "Cannot add options for {} because its monitor service was "
+                "registered outside AddOptions.",
+                optionsType.name()));
+        }
+
+        auto monitor = std::make_shared<OptionsMonitor<TOptions>>(
+            std::move(defaults));
+        AddSingleton(monitor);
+
+        std::shared_ptr<IOptionsMonitor<TOptions>> readOnly = monitor;
+        AddSingleton(readOnly);
+
+        optionsMonitors.emplace(optionsType, monitor);
+        return OptionsBuilder<TOptions>(std::move(monitor));
     }
 }

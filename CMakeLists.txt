@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.25)
 project(TyrantGameEngine VERSION 2.0.0.0 LANGUAGES CXX)
 include(./CMake/Tyrant.cmake)
 include(CheckCXXSourceCompiles)
+include(CMakePackageConfigHelpers)
 include(FetchContent)
+include(GNUInstallDirs)
 
 find_package(Threads REQUIRED)
 
@@ -10,6 +12,8 @@ find_package(Threads REQUIRED)
 set(TGE_VERSION_MAJOR ${CMAKE_PROJECT_VERSION_MAJOR})
 set(TGE_VERSION_MINOR ${CMAKE_PROJECT_VERSION_MINOR})
 set(TGE_VERSION_PATCH ${CMAKE_PROJECT_VERSION_PATCH})
+set(TGE_PACKAGE_INSTALL_DIR
+    "${CMAKE_INSTALL_LIBDIR}/cmake/TyrantGameEngine")
 
 add_definitions(-DTGE_VERSION_MAJOR=${TGE_VERSION_MAJOR})
 add_definitions(-DTGE_VERSION_MINOR=${TGE_VERSION_MINOR})
@@ -19,7 +23,6 @@ add_definitions(-DTGE_VERSION_PATCH=${TGE_VERSION_PATCH})
 set(CPACK_PACKAGE_VERSION_MAJOR ${CMAKE_PROJECT_VERSION_MAJOR})
 set(CPACK_PACKAGE_VERSION_MINOR ${CMAKE_PROJECT_VERSION_MINOR})
 set(CPACK_PACKAGE_VERSION_PATCH ${CMAKE_PROJECT_VERSION_PATCH})
-include(CPack)
 
 # TGE intentionally targets the current C++ standard. Individual C++26
 # facilities are still probed below because compiler and standard-library
@@ -49,6 +52,12 @@ TGE_OPTION(
   "C++26 reflection-generated service activation: AUTO, ON, or OFF"
   AUTO ON OFF)
 TGE_OPTION(
+  TGE_OPTIONS_REFLECTION
+  STRING
+  AUTO
+  "C++26 reflection-generated options serialization: AUTO, ON, or OFF"
+  AUTO ON OFF)
+TGE_OPTION(
   TGE_EXECUTION_BACKEND
   STRING
   AUTO
@@ -63,6 +72,17 @@ set_property(CACHE TGE_REFLECTION_DI PROPERTY STRINGS AUTO ON OFF)
 if(NOT TGE_REFLECTION_DI MATCHES "^(AUTO|ON|OFF)$")
   message(FATAL_ERROR
     "TGE_REFLECTION_DI must be AUTO, ON, or OFF (received '${TGE_REFLECTION_DI}').")
+endif()
+
+string(TOUPPER "${TGE_OPTIONS_REFLECTION}" TGE_OPTIONS_REFLECTION)
+set(TGE_OPTIONS_REFLECTION "${TGE_OPTIONS_REFLECTION}" CACHE STRING
+    "C++26 reflection-generated options serialization: AUTO, ON, or OFF" FORCE)
+set_property(CACHE TGE_OPTIONS_REFLECTION PROPERTY STRINGS AUTO ON OFF)
+
+if(NOT TGE_OPTIONS_REFLECTION MATCHES "^(AUTO|ON|OFF)$")
+  message(FATAL_ERROR
+    "TGE_OPTIONS_REFLECTION must be AUTO, ON, or OFF "
+    "(received '${TGE_OPTIONS_REFLECTION}').")
 endif()
 
 string(TOUPPER "${TGE_EXECUTION_BACKEND}" TGE_EXECUTION_BACKEND)
@@ -81,7 +101,12 @@ set(_tge_reflection_di_supported FALSE)
 if(NOT TGE_REFLECTION_DI STREQUAL "OFF")
   set(_tge_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
 
-  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    string(APPEND CMAKE_REQUIRED_FLAGS " -freflection")
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    string(APPEND CMAKE_REQUIRED_FLAGS
+      " -freflection -fexpansion-statements")
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
     string(APPEND CMAKE_REQUIRED_FLAGS " -freflection")
   endif()
 
@@ -288,7 +313,7 @@ else()
     tge_execution_backend
     SYSTEM INTERFACE
       $<BUILD_INTERFACE:${tge_stdexec_SOURCE_DIR}/include>
-      $<INSTALL_INTERFACE:include>)
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
   target_compile_options(
     tge_execution_backend
     INTERFACE
@@ -299,10 +324,108 @@ else()
   message(STATUS "TGE: using pinned stdexec compatibility backend")
 endif()
 
+# Glaze provides the portable, allocation-conscious serialization backend for
+# typed runtime options. Fetch only its headers so embedding TGE never mutates
+# a superproject's Glaze cache settings or target namespace.
+FetchContent_Declare(
+  tge_glaze
+  URL
+    https://github.com/stephenberry/glaze/archive/refs/tags/v7.9.1.tar.gz
+  URL_HASH
+    SHA256=d6dee391276f5375672c35d06058e4fd8f1f30f62bae163a004b3bd13a4e2ae3
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  SOURCE_SUBDIR __tge_header_only)
+FetchContent_MakeAvailable(tge_glaze)
+set(TGE_GLAZE_SOURCE_DIR "${tge_glaze_SOURCE_DIR}")
+
+add_library(tge_glaze_headers INTERFACE)
+add_library(TGE::glaze_headers ALIAS tge_glaze_headers)
+target_compile_features(tge_glaze_headers INTERFACE cxx_std_23)
+target_include_directories(
+  tge_glaze_headers
+  SYSTEM INTERFACE
+    $<BUILD_INTERFACE:${tge_glaze_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+target_compile_options(
+  tge_glaze_headers
+  INTERFACE
+    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/Zc:preprocessor;/permissive-;/Zc:lambda>)
+
+# Use Glaze's direct C++26 field reflection only when this exact integration
+# compiles. Other supported toolchains retain Glaze's portable aggregate path.
+set(TGE_OPTIONS_REFLECTION_ENABLED FALSE)
+
+if(NOT TGE_OPTIONS_REFLECTION STREQUAL "OFF")
+  set(_tge_saved_required_definitions "${CMAKE_REQUIRED_DEFINITIONS}")
+  set(_tge_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
+  set(_tge_saved_required_includes "${CMAKE_REQUIRED_INCLUDES}")
+  list(APPEND CMAKE_REQUIRED_DEFINITIONS -DGLZ_REFLECTION26=1)
+  list(APPEND CMAKE_REQUIRED_INCLUDES "${tge_glaze_SOURCE_DIR}/include")
+
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    string(APPEND CMAKE_REQUIRED_FLAGS " -freflection")
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    string(APPEND CMAKE_REQUIRED_FLAGS
+      " -freflection -fexpansion-statements")
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    string(APPEND CMAKE_REQUIRED_FLAGS " -freflection")
+  endif()
+
+  unset(TGE_COMPILER_HAS_CXX26_OPTIONS_REFLECTION CACHE)
+  check_cxx_source_compiles([=[
+    #include <glaze/glaze.hpp>
+    #include <string>
+
+    class Settings
+    {
+    public:
+        Settings() = default;
+        std::string name = "Tyrant";
+        int workers = 4;
+    };
+
+    int main()
+    {
+        auto serialized = glz::write_json(Settings {});
+        if (!serialized)
+        {
+            return 1;
+        }
+
+        Settings value;
+        return glz::read_json(value, *serialized) ? 2 : 0;
+    }
+  ]=] TGE_COMPILER_HAS_CXX26_OPTIONS_REFLECTION)
+
+  set(CMAKE_REQUIRED_DEFINITIONS "${_tge_saved_required_definitions}")
+  set(CMAKE_REQUIRED_FLAGS "${_tge_saved_required_flags}")
+  set(CMAKE_REQUIRED_INCLUDES "${_tge_saved_required_includes}")
+
+  if(TGE_COMPILER_HAS_CXX26_OPTIONS_REFLECTION)
+    set(TGE_OPTIONS_REFLECTION_ENABLED TRUE)
+  endif()
+endif()
+
+if(TGE_OPTIONS_REFLECTION STREQUAL "ON" AND
+   NOT TGE_OPTIONS_REFLECTION_ENABLED)
+  message(FATAL_ERROR
+    "TGE_OPTIONS_REFLECTION=ON requires a compiler and standard library with "
+    "the C++26 reflection facilities used by Glaze.")
+endif()
+
 if(TGE_REFLECTION_DI_ENABLED)
   set(TGE_HAS_REFLECTION_DI_VALUE 1)
 else()
   set(TGE_HAS_REFLECTION_DI_VALUE 0)
+endif()
+
+if(TGE_OPTIONS_REFLECTION_ENABLED)
+  set(TGE_HAS_CXX26_OPTIONS_REFLECTION_VALUE 1)
+  message(STATUS
+    "TGE: enabling C++26 reflection-generated options serialization")
+else()
+  set(TGE_HAS_CXX26_OPTIONS_REFLECTION_VALUE 0)
+  message(STATUS "TGE: using portable aggregate options serialization")
 endif()
 
 if(TGE_NATIVE_EXECUTION_ENABLED)
@@ -328,16 +451,22 @@ target_include_directories(
   tge_build_options
   INTERFACE
     $<BUILD_INTERFACE:${TGE_GENERATED_INCLUDE_DIR}>
-    $<INSTALL_INTERFACE:include>)
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 target_link_libraries(
   tge_build_options
-  INTERFACE TGE::execution_backend)
+  INTERFACE TGE::execution_backend TGE::glaze_headers)
 
-if(TGE_REFLECTION_DI_ENABLED)
+target_compile_definitions(
+  tge_build_options
+  INTERFACE
+    $<BUILD_INTERFACE:GLZ_REFLECTION26=${TGE_HAS_CXX26_OPTIONS_REFLECTION_VALUE}>)
+
+if(TGE_REFLECTION_DI_ENABLED OR TGE_OPTIONS_REFLECTION_ENABLED)
   target_compile_options(
     tge_build_options
     INTERFACE
-      $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-freflection>)
+      $<BUILD_INTERFACE:$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU,AppleClang>>:-freflection>>
+      $<BUILD_INTERFACE:$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:Clang>>:-freflection;-fexpansion-statements>>)
 endif()
 
 # Add Subdirectories
@@ -356,3 +485,22 @@ if(TGE_BUILD_TESTS)
     add_subdirectory("Tests")
   endif()
 endif()
+
+configure_package_config_file(
+  CMake/Config.cmake.in
+  "${CMAKE_CURRENT_BINARY_DIR}/TyrantGameEngineConfig.cmake"
+  INSTALL_DESTINATION "${TGE_PACKAGE_INSTALL_DIR}")
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/TyrantGameEngineConfigVersion.cmake"
+  VERSION "${PROJECT_VERSION}"
+  COMPATIBILITY SameMajorVersion)
+install(
+  FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/TyrantGameEngineConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/TyrantGameEngineConfigVersion.cmake"
+  DESTINATION "${TGE_PACKAGE_INSTALL_DIR}")
+install(
+  FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.md"
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/TyrantGameEngine")
+
+include(CPack)

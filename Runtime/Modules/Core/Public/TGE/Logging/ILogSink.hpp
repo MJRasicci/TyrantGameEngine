@@ -1,5 +1,6 @@
 #pragma once
 
+#include "TGE/Export.hpp"
 #include "TGE/Logging/LogMessage.hpp"
 
 #include <string_view>
@@ -14,7 +15,7 @@ namespace TGE {
  * must be thread-safe because sinks are invoked from the asynchronous logging worker
  * thread.
  */
-class ILogSink
+class TGE_API ILogSink
 {
 public:
     /**

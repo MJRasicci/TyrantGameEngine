@@ -1,0 +1,170 @@
+cmake_minimum_required(VERSION 3.25)
+
+if(NOT DEFINED TGE_TEST_CONFIG OR TGE_TEST_CONFIG STREQUAL "")
+    set(TGE_TEST_CONFIG "@CMAKE_BUILD_TYPE@")
+endif()
+
+set(
+    _tge_validation_root
+    "@CMAKE_CURRENT_BINARY_DIR@/installed-consumer/${TGE_TEST_CONFIG}")
+set(_tge_install_prefix "${_tge_validation_root}/install")
+set(_tge_consumer_build "${_tge_validation_root}/build")
+
+file(REMOVE_RECURSE "${_tge_validation_root}")
+file(MAKE_DIRECTORY "${_tge_validation_root}")
+
+set(
+    _tge_install_command
+    "@CMAKE_COMMAND@"
+    --install "@CMAKE_BINARY_DIR@"
+    --prefix "${_tge_install_prefix}")
+if(NOT TGE_TEST_CONFIG STREQUAL "")
+    list(APPEND _tge_install_command --config "${TGE_TEST_CONFIG}")
+endif()
+
+execute_process(
+    COMMAND ${_tge_install_command}
+    RESULT_VARIABLE _tge_result
+    OUTPUT_VARIABLE _tge_output
+    ERROR_VARIABLE _tge_error)
+if(NOT _tge_result EQUAL 0)
+    message(FATAL_ERROR
+        "Installing TGE for its downstream smoke test failed.\n"
+        "${_tge_output}${_tge_error}")
+endif()
+
+set(
+    _tge_installed_editor
+    "${_tge_install_prefix}/@CMAKE_INSTALL_BINDIR@/TyrantEditor@CMAKE_EXECUTABLE_SUFFIX@")
+if(NOT EXISTS "${_tge_installed_editor}")
+    message(FATAL_ERROR
+        "The installed Editor executable was not found at "
+        "${_tge_installed_editor}.")
+endif()
+
+execute_process(
+    COMMAND "${_tge_installed_editor}"
+    WORKING_DIRECTORY "${_tge_validation_root}"
+    RESULT_VARIABLE _tge_result
+    OUTPUT_VARIABLE _tge_output
+    ERROR_VARIABLE _tge_error)
+if(NOT _tge_result EQUAL 0)
+    message(FATAL_ERROR
+        "Running the installed Editor failed.\n"
+        "${_tge_output}${_tge_error}")
+endif()
+
+foreach(_tge_unexpected IN ITEMS
+        "include/benchmark"
+        "include/gtest"
+        "include/gmock"
+        "lib/cmake/benchmark"
+        "lib/cmake/GTest"
+        "lib64/cmake/benchmark"
+        "lib64/cmake/GTest")
+    if(EXISTS "${_tge_install_prefix}/${_tge_unexpected}")
+        message(FATAL_ERROR
+            "The TGE package unexpectedly installed a test dependency at "
+            "${_tge_unexpected}.")
+    endif()
+endforeach()
+
+set(
+    _tge_configure_command
+    "@CMAKE_COMMAND@"
+    -S "@CMAKE_CURRENT_SOURCE_DIR@/InstalledConsumer"
+    -B "${_tge_consumer_build}"
+    -G "@CMAKE_GENERATOR@"
+    "-DCMAKE_PREFIX_PATH=${_tge_install_prefix}"
+    "-DCMAKE_CXX_COMPILER=@CMAKE_CXX_COMPILER@")
+
+if(NOT "@CMAKE_GENERATOR_PLATFORM@" STREQUAL "")
+    list(APPEND
+        _tge_configure_command
+        -A "@CMAKE_GENERATOR_PLATFORM@")
+endif()
+if(NOT "@CMAKE_GENERATOR_TOOLSET@" STREQUAL "")
+    list(APPEND
+        _tge_configure_command
+        -T "@CMAKE_GENERATOR_TOOLSET@")
+endif()
+if(NOT "@CMAKE_MAKE_PROGRAM@" STREQUAL "")
+    list(APPEND
+        _tge_configure_command
+        "-DCMAKE_MAKE_PROGRAM=@CMAKE_MAKE_PROGRAM@")
+endif()
+if(NOT "@CMAKE_BUILD_TYPE@" STREQUAL "")
+    list(APPEND
+        _tge_configure_command
+        "-DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@")
+endif()
+if(NOT "@CMAKE_TOOLCHAIN_FILE@" STREQUAL "")
+    list(APPEND
+        _tge_configure_command
+        "-DCMAKE_TOOLCHAIN_FILE=@CMAKE_TOOLCHAIN_FILE@")
+endif()
+if(NOT "@CMAKE_OSX_ARCHITECTURES@" STREQUAL "")
+    list(APPEND
+        _tge_configure_command
+        "-DCMAKE_OSX_ARCHITECTURES=@CMAKE_OSX_ARCHITECTURES@")
+endif()
+if(NOT "@CMAKE_OSX_SYSROOT@" STREQUAL "")
+    list(APPEND
+        _tge_configure_command
+        "-DCMAKE_OSX_SYSROOT=@CMAKE_OSX_SYSROOT@")
+endif()
+if(NOT "@CMAKE_OSX_DEPLOYMENT_TARGET@" STREQUAL "")
+    list(APPEND
+        _tge_configure_command
+        "-DCMAKE_OSX_DEPLOYMENT_TARGET=@CMAKE_OSX_DEPLOYMENT_TARGET@")
+endif()
+
+execute_process(
+    COMMAND ${_tge_configure_command}
+    RESULT_VARIABLE _tge_result
+    OUTPUT_VARIABLE _tge_output
+    ERROR_VARIABLE _tge_error)
+if(NOT _tge_result EQUAL 0)
+    message(FATAL_ERROR
+        "Configuring the installed TGE consumer failed.\n"
+        "${_tge_output}${_tge_error}")
+endif()
+
+set(
+    _tge_build_command
+    "@CMAKE_COMMAND@"
+    --build "${_tge_consumer_build}")
+if(NOT TGE_TEST_CONFIG STREQUAL "")
+    list(APPEND _tge_build_command --config "${TGE_TEST_CONFIG}")
+endif()
+
+execute_process(
+    COMMAND ${_tge_build_command}
+    RESULT_VARIABLE _tge_result
+    OUTPUT_VARIABLE _tge_output
+    ERROR_VARIABLE _tge_error)
+if(NOT _tge_result EQUAL 0)
+    message(FATAL_ERROR
+        "Building the installed TGE consumer failed.\n"
+        "${_tge_output}${_tge_error}")
+endif()
+
+set(
+    _tge_test_command
+    "@CMAKE_CTEST_COMMAND@"
+    --test-dir "${_tge_consumer_build}"
+    --output-on-failure)
+if(NOT TGE_TEST_CONFIG STREQUAL "")
+    list(APPEND _tge_test_command -C "${TGE_TEST_CONFIG}")
+endif()
+
+execute_process(
+    COMMAND ${_tge_test_command}
+    RESULT_VARIABLE _tge_result
+    OUTPUT_VARIABLE _tge_output
+    ERROR_VARIABLE _tge_error)
+if(NOT _tge_result EQUAL 0)
+    message(FATAL_ERROR
+        "Running the installed TGE consumer failed.\n"
+        "${_tge_output}${_tge_error}")
+endif()

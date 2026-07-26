@@ -16,7 +16,7 @@ target_compile_features(tge_editor PUBLIC "cxx_std_${TGE_CXX_STANDARD}")
 target_include_directories(tge_editor
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>)
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 # Link the runtime (points to static or shared via alias)
 target_link_libraries(tge_editor PRIVATE TGE::runtime)
@@ -25,5 +25,24 @@ set_target_properties(tge_editor PROPERTIES
     OUTPUT_NAME "TyrantEditor"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
 
-install(TARGETS tge_editor RUNTIME DESTINATION bin)
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION include/Editor FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h")
+if(APPLE)
+    set_property(
+        TARGET tge_editor
+        PROPERTY INSTALL_RPATH
+            "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
+elseif(UNIX)
+    set_property(
+        TARGET tge_editor
+        PROPERTY INSTALL_RPATH
+            "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+endif()
+
+install(
+    TARGETS tge_editor
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+install(
+    DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/Editor"
+    FILES_MATCHING
+        PATTERN "*.hpp"
+        PATTERN "*.h")

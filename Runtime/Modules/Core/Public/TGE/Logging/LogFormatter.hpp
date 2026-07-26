@@ -1,5 +1,6 @@
 #pragma once
 
+#include "TGE/Export.hpp"
 #include "TGE/Logging/LogMessage.hpp"
 
 #include <string>
@@ -10,7 +11,7 @@ namespace TGE {
 /**
  * @brief Utility responsible for rendering @ref LogMessage instances.
  */
-class LogFormatter
+class TGE_API LogFormatter
 {
 public:
     /**

@@ -16,50 +16,64 @@ TGE_MODULE(Core REQUIRED)
 # Enforce REQUIRED rules now that all modules are declared
 TGE_VALIDATE_REQUIRED_MODULES()
 
-# --- Aggregate libraries from selected module objects --------------------------
-# Static aggregate
-add_library(tge_runtime_static STATIC ${TGE_SELECTED_OBJECTS})
-add_library(TGE::runtime_static ALIAS tge_runtime_static)
-set_target_properties(tge_runtime_static PROPERTIES OUTPUT_NAME "tge_runtime")
-target_link_libraries(tge_runtime_static PUBLIC ${TGE_SELECTED_MODULES})
-set_property(TARGET tge_runtime_static PROPERTY POSITION_INDEPENDENT_CODE ON)
+# Public include roots are repeated on the aggregate because module object
+# libraries are deliberately build-only and never leak into installed exports.
+get_property(_tge_pub_inc_dirs GLOBAL PROPERTY TGE_PUBLIC_INCLUDE_DIRS)
+if(_tge_pub_inc_dirs)
+    list(REMOVE_DUPLICATES _tge_pub_inc_dirs)
+endif()
 
-# Optional shared aggregate
+# Build exactly the linkage selected by TGE_BUILD_SHARED. This avoids duplicate
+# Windows import/static .lib names and ensures object export definitions match
+# the archive in which they are used.
 if(TGE_BUILD_SHARED)
     add_library(tge_runtime_shared SHARED ${TGE_SELECTED_OBJECTS})
     add_library(TGE::runtime_shared ALIAS tge_runtime_shared)
-    set_target_properties(tge_runtime_shared PROPERTIES OUTPUT_NAME "tge_runtime")
-    target_link_libraries(tge_runtime_shared PUBLIC ${TGE_SELECTED_MODULES})
-
-    # Define for public headers to switch import/export
+    set(_tge_runtime_target tge_runtime_shared)
+    set_target_properties(
+        tge_runtime_shared
+        PROPERTIES
+            OUTPUT_NAME "tge_runtime"
+            EXPORT_NAME runtime_shared)
     target_compile_definitions(tge_runtime_shared PUBLIC TGE_SHARED)
-
-    target_include_directories(tge_runtime_shared PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
-        $<INSTALL_INTERFACE:include>)
+else()
+    add_library(tge_runtime_static STATIC ${TGE_SELECTED_OBJECTS})
+    add_library(TGE::runtime_static ALIAS tge_runtime_static)
+    set(_tge_runtime_target tge_runtime_static)
+    set_target_properties(
+        tge_runtime_static
+        PROPERTIES
+            OUTPUT_NAME "tge_runtime"
+            EXPORT_NAME runtime_static
+            POSITION_INDEPENDENT_CODE ON)
 endif()
+
+target_link_libraries(${_tge_runtime_target} PUBLIC TGE::build_options)
+target_include_directories(
+    ${_tge_runtime_target}
+    PUBLIC
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+foreach(_dir IN LISTS _tge_pub_inc_dirs)
+    target_include_directories(
+        ${_tge_runtime_target}
+        PUBLIC $<BUILD_INTERFACE:${_dir}>)
+endforeach()
 
 # Public convenience alias that points to the chosen linkage
 add_library(tge_runtime INTERFACE)
 add_library(TGE::runtime ALIAS tge_runtime)
-target_link_libraries(tge_runtime INTERFACE TGE::build_options)
-
-if(TGE_BUILD_SHARED)
-  target_link_libraries(tge_runtime INTERFACE TGE::runtime_shared)
-else()
-  target_link_libraries(tge_runtime INTERFACE TGE::runtime_static)
-endif()
+set_target_properties(tge_runtime PROPERTIES EXPORT_NAME runtime)
+target_link_libraries(
+    tge_runtime
+    INTERFACE TGE::build_options ${_tge_runtime_target})
 
 # ------------------ Auto-install public headers per module ---------------------
-get_property(_tge_pub_inc_dirs GLOBAL PROPERTY TGE_PUBLIC_INCLUDE_DIRS)
 if(_tge_pub_inc_dirs)
-    # Deduplicate
-    list(REMOVE_DUPLICATES _tge_pub_inc_dirs)
     foreach(_dir IN LISTS _tge_pub_inc_dirs)
         set(_tge_subdir "${_dir}/TGE")
         if(EXISTS "${_tge_subdir}")
             # Install into include/TGE while preserving the module's public hierarchy
-            install(DIRECTORY "${_tge_subdir}/" DESTINATION include/TGE FILES_MATCHING
+            install(DIRECTORY "${_tge_subdir}/" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/TGE" FILES_MATCHING
                     PATTERN "*.h" PATTERN "*.hpp" PATTERN "*.hh" PATTERN "*.hxx" PATTERN "*.inl")
         endif()
     endforeach()
@@ -68,7 +82,7 @@ endif()
 # Install the generated feature configuration selected for this runtime.
 install(
     FILES "${TGE_GENERATED_INCLUDE_DIR}/TGE/Features.hpp"
-    DESTINATION include/TGE)
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/TGE")
 
 # Public asynchronous APIs use stdexec when the active standard library does
 # not yet provide the C++26 execution facilities. Package the pinned headers so
@@ -78,22 +92,47 @@ if(TGE_STDEXEC_SOURCE_DIR)
         DIRECTORY
             "${TGE_STDEXEC_SOURCE_DIR}/include/stdexec"
             "${TGE_STDEXEC_SOURCE_DIR}/include/exec"
-        DESTINATION include)
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
     install(
         FILES "${TGE_STDEXEC_SOURCE_DIR}/LICENSE.txt"
-        DESTINATION share/licenses/TyrantGameEngine
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/TyrantGameEngine"
         RENAME stdexec-LICENSE.txt)
 endif()
 
-# Libraries
-install(TARGETS tge_runtime_static
-        ARCHIVE DESTINATION lib
-        LIBRARY DESTINATION lib
-        RUNTIME DESTINATION bin)
+# Options serialization is part of TGE's public template surface, so installed
+# consumers receive the exact pinned Glaze headers used to build the runtime.
+install(
+    DIRECTORY "${TGE_GLAZE_SOURCE_DIR}/include/glaze"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+install(
+    FILES "${TGE_GLAZE_SOURCE_DIR}/LICENSE"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/TyrantGameEngine"
+    RENAME glaze-LICENSE.txt)
 
-if(TGE_BUILD_SHARED)
-    install(TARGETS tge_runtime_shared
-            ARCHIVE DESTINATION lib
-            LIBRARY DESTINATION lib
-            RUNTIME DESTINATION bin)
-endif()
+set_target_properties(
+    tge_build_options
+    PROPERTIES EXPORT_NAME build_options)
+set_target_properties(
+    tge_execution_backend
+    PROPERTIES EXPORT_NAME execution_backend)
+set_target_properties(
+    tge_glaze_headers
+    PROPERTIES EXPORT_NAME glaze_headers)
+
+install(
+    TARGETS
+        tge_runtime
+        ${_tge_runtime_target}
+        tge_build_options
+        tge_execution_backend
+        tge_glaze_headers
+    EXPORT TyrantGameEngineTargets
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+install(
+    EXPORT TyrantGameEngineTargets
+    FILE TyrantGameEngineTargets.cmake
+    NAMESPACE TGE::
+    DESTINATION "${TGE_PACKAGE_INSTALL_DIR}")

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "TGE/Export.hpp"
 #include "TGE/Logging/ILogDispatcher.hpp"
 #include "TGE/Logging/LoggingOptions.hpp"
 #include "TGE/Logging/LogMessage.hpp"
@@ -16,7 +17,7 @@ namespace TGE {
 /**
  * @brief Central asynchronous dispatcher that forwards log messages to registered sinks.
  */
-class GlobalLogger : public ILogDispatcher
+class TGE_API GlobalLogger : public ILogDispatcher
 {
 public:
     /**

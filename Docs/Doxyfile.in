@@ -10,6 +10,9 @@ EXTRACT_ALL            = YES
 INPUT                  = @PROJECT_SOURCE_DIR@/Editor \
                          @PROJECT_SOURCE_DIR@/Runtime \
                          @PROJECT_SOURCE_DIR@/Docs/Pages
+# This repository-authorship guide contains intentionally literal Doxygen
+# commands and placeholder symbols; it is not part of the generated API site.
+EXCLUDE                = @PROJECT_SOURCE_DIR@/Docs/Pages/DocumentationStyleGuide.md
 FILE_PATTERNS          = *.c \
                          *.cc \
                          *.cxx \

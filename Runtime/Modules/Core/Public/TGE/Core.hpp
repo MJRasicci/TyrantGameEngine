@@ -25,6 +25,8 @@
 #include "TGE/Logging/Sinks/ConsoleLogSink.hpp"
 #include "TGE/Logging/Sinks/FileLogSink.hpp"
 
+#include "TGE/Options/Options.hpp"
+
 #include "TGE/Services/Service.hpp"
 #include "TGE/Services/ServiceCollection.hpp"
 #include "TGE/Services/ServiceDescriptor.hpp"

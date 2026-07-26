@@ -1,5 +1,6 @@
 #pragma once
 
+#include "TGE/Export.hpp"
 #include "TGE/Logging/ILogSink.hpp"
 
 #include <iostream>
@@ -11,7 +12,7 @@ namespace TGE {
 /**
  * @brief Sink that writes formatted messages to a standard output stream.
  */
-class ConsoleLogSink final : public ILogSink
+class TGE_API ConsoleLogSink final : public ILogSink
 {
 public:
     /**

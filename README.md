@@ -15,6 +15,7 @@ Tyrant Game Engine (TGE) is a modular, data-driven runtime focused on rapid iter
   - [Using CMake Presets](#using-cmake-presets)
   - [Reflection-generated dependency injection](#reflection-generated-dependency-injection)
   - [Asynchronous execution backend](#asynchronous-execution-backend)
+  - [Typed options serialization](#typed-options-serialization)
   - [Running Tests and Benchmarks](#running-tests-and-benchmarks)
   - [Packaging](#packaging)
   - [Workflow Shortcuts](#workflow-shortcuts)
@@ -182,6 +183,24 @@ installed builds. Public code uses `TGE::Task<T>` and
 `TGE::Execution::SyncWait`, so consumers do not select a backend independently
 from the runtime they link.
 
+### Typed options serialization
+
+TGE's typed Options API uses a pinned Glaze serialization backend. Public
+aggregates serialize without handwritten metadata on supported GCC, Clang,
+Apple Clang, and MSVC toolchains. CMake probes the active C++26 reflection
+implementation and enables direct field reflection when the exact integration
+compiles; other toolchains use the portable aggregate path.
+
+`TGE_OPTIONS_REFLECTION` independently selects `AUTO` (the default), `ON`, or
+`OFF` using the same probe/require/disable semantics as `TGE_REFLECTION_DI`.
+This keeps serialization capability guards accurate and makes the portable path
+straightforward to exercise in every platform's CI. Public headers also fall
+back safely when an installed consumer does not enable the compiler's
+reflection mode, even if the packaged runtime was built with it.
+
+The Glaze headers and license are packaged with installed TGE builds because
+serialization is part of the public template surface.
+
 ### Running Tests and Benchmarks
 
 When GoogleTest/GoogleMock and Google Benchmark are available, enable and execute tests via CTest:
@@ -201,6 +220,19 @@ cmake --build --preset linux-x64-release --target package
 ```
 
 or leverage the release workflow presets described below to run configure, build, tests, and packaging in a single command.
+
+Installed packages provide a CMake config package and the linkage-independent
+`TGE::runtime` target:
+
+```cmake
+find_package(TyrantGameEngine CONFIG REQUIRED)
+target_link_libraries(my_game PRIVATE TGE::runtime)
+```
+
+The target carries TGE's C++26 requirement, public headers, thread dependency,
+selected static or shared runtime, and the pinned public template dependencies.
+Consumers therefore use the same execution and serialization backends as the
+runtime they link.
 
 ### Workflow Shortcuts
 
@@ -283,6 +315,30 @@ shutdown continues through the remaining services if one stop operation fails.
 Applications can request shutdown from any thread through
 `Application::RequestStop` or the injected `ApplicationLifetime`; lifecycle
 continuations remain on the application task's execution scheduler.
+
+Custom owning aggregates can also be registered as validated, live options:
+
+```cpp
+struct ToolOptions
+{
+    std::string endpoint { "localhost" };
+    std::uint32_t workers { 4 };
+};
+
+application.Services()
+    .AddOptions<ToolOptions>()
+    .FromJsonFile("tool.options.json", { .optional = true })
+    .FromEnvironment("TGE_TOOL")
+    .Validate(
+        [](const ToolOptions& value) { return value.workers > 0; },
+        "workers must be positive");
+```
+
+Consumers inject `std::shared_ptr<TGE::IOptionsMonitor<ToolOptions>>` and call
+`Current()` for an immutable snapshot. Reloads are transactional: invalid
+provider data or validation failures preserve the last-known-good value.
+See [Typed live options](Docs/Pages/Options.md) for provider extension,
+monitoring, serialization, and environment mapping.
 
 After building documentation presets, open `artifacts/docs/html/index.html` for
 the generated API reference.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "TGE/Export.hpp"
 #include "TGE/Logging/ILogSink.hpp"
 
 #include <filesystem>
@@ -12,7 +13,7 @@ namespace TGE {
 /**
  * @brief Sink that appends log messages to a file on disk.
  */
-class FileLogSink final : public ILogSink
+class TGE_API FileLogSink final : public ILogSink
 {
 public:
     /**

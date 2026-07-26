@@ -1,5 +1,6 @@
 #pragma once
 
+#include "TGE/Export.hpp"
 #include "TGE/Logging/LogFormatter.hpp"
 #include "TGE/Logging/ILogSink.hpp"
 
@@ -11,7 +12,7 @@ namespace TGE {
 /**
  * @brief Aggregates configuration required to construct a logging dispatcher.
  */
-class LoggingOptions
+class TGE_API LoggingOptions
 {
 public:
     /**

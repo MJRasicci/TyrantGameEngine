@@ -16,10 +16,14 @@
 
 #include "TGE/Application/IHostedService.hpp"
 #include "TGE/Export.hpp"
+#include "TGE/Options/OptionsConcepts.hpp"
 #include "TGE/Services/ServiceDescriptor.hpp"
 
 namespace TGE
 {
+    template<OptionsType TOptions>
+    class OptionsBuilder;
+
     class ServiceLocator;
     class ServiceProvider;
     namespace detail { struct ServiceRegistry; }
@@ -141,6 +145,15 @@ namespace TGE
         bool TryAddTransient();
 
         /**
+         * @brief Register or reopen the singleton monitor for an options type.
+         *
+         * Repeated calls compose additional sources and validators onto the
+         * same monitor, allowing independent subsystems to contribute settings.
+         */
+        template<OptionsType TOptions>
+        OptionsBuilder<TOptions> AddOptions(TOptions defaults = {});
+
+        /**
          * @brief Create the root service provider for the configured services.
          */
         std::shared_ptr<ServiceProvider> BuildServiceProvider();
@@ -161,6 +174,8 @@ namespace TGE
          * @brief Accumulates descriptors prior to provider construction.
          */
         std::unique_ptr<detail::ServiceRegistry> registry;
+        std::unordered_map<std::type_index, std::shared_ptr<void>>
+            optionsMonitors;
     };
 }
 
