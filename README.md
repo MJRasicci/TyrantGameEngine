@@ -1,5 +1,7 @@
 # Tyrant Game Engine 2.0
 
+> **This project is experimental and not yet ready for use.** This is a rewrite/spiritual successor to my first game engine. It is in the very early stages, and some of the documentation may reflect planned future state rather than current completed features. Additionally, public APIs are unstable, things will break, and no binaries have been published yet. Check back later to see progress towards an initial release.
+
 Tyrant Game Engine (TGE) is a modular, data-driven runtime focused on rapid iteration for game prototypes and experimental rendering pipelines. The repository provides the core runtime, supporting tools, and build workflows needed to explore engine concepts across desktop platforms.
 
 ## Table of Contents
