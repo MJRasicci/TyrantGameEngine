@@ -107,7 +107,9 @@ Temporary Items
 *.icloud
 
 ### VisualStudioCode ###
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
 
 # Local History for Visual Studio Code
 .history/
