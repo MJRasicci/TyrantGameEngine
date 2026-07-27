@@ -83,7 +83,7 @@ TGE::Task<void> Editor::StopAsync()
 
 int main()
 {
-    auto application = TGE::Application::Create();
+    auto application = TGE::GuiApplication::Create();
 
     auto userSettings =
         std::make_shared<TGE::JsonFileOptionsProvider<EditorOptions>>(

@@ -2,6 +2,7 @@
 
 #include "TGE/Application.hpp"
 #include "TGE/Core.hpp"
+#include "TGE/GuiApplication.hpp"
 
 #include <cstdint>
 #include <memory>
