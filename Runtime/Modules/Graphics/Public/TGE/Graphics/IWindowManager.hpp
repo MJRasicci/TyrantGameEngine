@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 
+#include "TGE/Execution/Task.hpp"
 #include "TGE/Export.hpp"
 #include "TGE/Graphics/WindowDescriptor.hpp"
 #include "TGE/Graphics/WindowError.hpp"
@@ -26,8 +27,8 @@ namespace TGE
     public:
         virtual ~IWindowManager();
 
-        [[nodiscard]] virtual WindowResult CreateWindow(
-            const WindowDescriptor& descriptor) = 0;
+        [[nodiscard]] virtual Task<WindowResult> CreateWindowAsync(
+            WindowDescriptor descriptor) = 0;
 
         [[nodiscard]] virtual std::shared_ptr<IWindow> FindWindow(
             WindowId id) const noexcept = 0;
@@ -40,8 +41,11 @@ namespace TGE
 
         /**
          * @brief Unconditionally destroy a window and its native resources.
-         * @return true when the manager owned the supplied identifier.
+         *
+         * Successful completion leaves any externally retained IWindow facade
+         * in its terminal Destroyed state.
          */
-        virtual bool DestroyWindow(WindowId id) = 0;
+        virtual Task<WindowOperationResult> DestroyWindowAsync(
+            WindowId id) = 0;
     };
 }
