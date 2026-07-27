@@ -1,5 +1,8 @@
+#include <TGE/Application.hpp>
+#include <TGE/CliApplication.hpp>
 #include <TGE/Core.hpp>
 #include <TGE/Graphics.hpp>
+#include <TGE/GuiApplication.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -103,6 +106,27 @@ int main()
     if (!applied || persisted != expected)
     {
         return 5;
+    }
+
+    auto application = TGE::Application::Create();
+    application.RequestStop(6);
+    if (application.Run() != 6)
+    {
+        return 6;
+    }
+
+    auto cli = TGE::CliApplication::Create();
+    cli.RequestStop(7);
+    if (cli.Run() != 7)
+    {
+        return 7;
+    }
+
+    auto gui = TGE::GuiApplication::Create();
+    gui.RequestStop(8);
+    if (gui.Run() != 8)
+    {
+        return 8;
     }
 
     return 0;
