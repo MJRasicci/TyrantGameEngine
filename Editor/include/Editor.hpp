@@ -2,7 +2,9 @@
 
 #include "TGE/Application.hpp"
 #include "TGE/Core.hpp"
+#include "TGE/Graphics.hpp"
 #include "TGE/GuiApplication.hpp"
+#include "TGE/Input.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -17,6 +19,15 @@ struct EditorOptions
     std::string project_name { "Untitled" };
     bool autosave_enabled { true };
     std::uint32_t autosave_interval_seconds { 60 };
+};
+
+/**
+ * @brief Process-local launch policy selected by the Editor executable.
+ */
+struct EditorLaunchOptions
+{
+    bool headless { false };
+    bool closeAfterStartup { false };
 };
 
 /**
@@ -43,7 +54,7 @@ private:
 };
 
 /**
- * @brief Placeholder lifecycle service for the Tyrant editor.
+ * @brief Editor lifecycle service that observes its root window and input.
  */
 class Editor final : public TGE::IHostedService
 {
@@ -54,6 +65,8 @@ public:
     Editor(
         std::shared_ptr<TGE::Logger<Editor>> logger,
         std::shared_ptr<TGE::ApplicationLifetime> lifetime,
+        std::shared_ptr<TGE::GuiApplicationContext> guiContext,
+        std::shared_ptr<EditorLaunchOptions> launchOptions,
         std::shared_ptr<TGE::IOptionsMonitor<EditorOptions>> options,
         std::shared_ptr<EditorSettings> settings);
 
@@ -70,7 +83,17 @@ public:
 private:
     std::shared_ptr<TGE::Logger<Editor>> logger;
     std::shared_ptr<TGE::ApplicationLifetime> lifetime;
+    std::shared_ptr<TGE::GuiApplicationContext> guiContext;
+    std::shared_ptr<EditorLaunchOptions> launchOptions;
     std::shared_ptr<TGE::IOptionsMonitor<EditorOptions>> options;
     std::shared_ptr<EditorSettings> settings;
     TGE::OptionsSubscription optionsSubscription;
+    TGE::WindowSubscription windowResizedSubscription;
+    TGE::WindowSubscription windowClosedSubscription;
+    TGE::InputSubscription keyboardSubscription;
+    TGE::InputSubscription textSubscription;
+    TGE::InputSubscription pointerMovedSubscription;
+    TGE::InputSubscription pointerButtonSubscription;
+    TGE::InputSubscription pointerWheelSubscription;
+    TGE::InputSubscription touchSubscription;
 };
