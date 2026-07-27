@@ -47,6 +47,7 @@ TGE_TEST_MODULE(Core)
 TGE_TEST_MODULE(Application)
 TGE_TEST_MODULE(CliApplication)
 TGE_TEST_MODULE(Graphics)
+TGE_TEST_MODULE(GuiApplication)
 
 # Exercise the installed public surface from a clean downstream project. Cross
 # builds cannot generally execute their produced consumer on the build host.

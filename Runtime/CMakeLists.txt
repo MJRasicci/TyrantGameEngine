@@ -10,6 +10,7 @@ TGE_MODULE(Core REQUIRED)
 TGE_MODULE(Application REQUIRED DEPS Core)
 TGE_MODULE(CliApplication REQUIRED DEPS Application)
 TGE_MODULE(Graphics REQUIRED DEPS Core)
+TGE_MODULE(GuiApplication REQUIRED DEPS Application Graphics)
 
 # In future:
 # TGE_MODULE(Assets   DEPS Core)
