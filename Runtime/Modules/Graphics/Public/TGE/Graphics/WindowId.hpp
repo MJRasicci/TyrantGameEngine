@@ -48,7 +48,7 @@ namespace TGE
 template<>
 struct std::hash<TGE::WindowId>
 {
-    constexpr std::size_t operator()(TGE::WindowId id) const noexcept
+    std::size_t operator()(TGE::WindowId id) const noexcept
     {
         return std::hash<std::uint64_t> {}(id.Value());
     }

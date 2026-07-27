@@ -129,7 +129,9 @@ function(TGE_MODULE name)
     add_library(${_obj_target} OBJECT ${_srcs})
     add_library(TGE::${name}_obj ALIAS ${_obj_target})
 
-    target_compile_features(${_obj_target} PUBLIC "cxx_std_${TGE_CXX_STANDARD}")
+    target_compile_features(
+        ${_obj_target}
+        PUBLIC "cxx_std_${TGE_CMAKE_CXX_STANDARD}")
     target_link_libraries(${_obj_target} PUBLIC TGE::build_options)
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         target_compile_options(${_obj_target} PRIVATE -fvisibility=hidden)
@@ -215,7 +217,9 @@ function(TGE_TEST_MODULE module)
         else()
             set(test_target "tge_test_${module}")
             add_executable(${test_target} ${unit_sources})
-            target_compile_features(${test_target} PRIVATE "cxx_std_${TGE_CXX_STANDARD}")
+            target_compile_features(
+                ${test_target}
+                PRIVATE "cxx_std_${TGE_CMAKE_CXX_STANDARD}")
             target_link_libraries(${test_target} PRIVATE TGE::runtime GTest::gmock_main)
             get_property(_tge_priv_inc_dirs GLOBAL PROPERTY TGE_PRIVATE_INCLUDE_DIRS)
             if(_tge_priv_inc_dirs)
@@ -245,7 +249,9 @@ function(TGE_TEST_MODULE module)
         else()
             set(benchmark_target "tge_bench_${module}")
             add_executable(${benchmark_target} ${benchmark_sources})
-            target_compile_features(${benchmark_target} PRIVATE "cxx_std_${TGE_CXX_STANDARD}")
+            target_compile_features(
+                ${benchmark_target}
+                PRIVATE "cxx_std_${TGE_CMAKE_CXX_STANDARD}")
             target_link_libraries(${benchmark_target} PRIVATE TGE::runtime benchmark::benchmark_main)
             get_property(_tge_priv_inc_dirs GLOBAL PROPERTY TGE_PRIVATE_INCLUDE_DIRS)
             if(_tge_priv_inc_dirs)

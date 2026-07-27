@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.30)
 
 # Options specific to runtime (more modules in future)
 # (Core is typically required by everything; we mark it REQUIRED below.)

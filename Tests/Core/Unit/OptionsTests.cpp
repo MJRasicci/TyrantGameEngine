@@ -25,7 +25,7 @@
 #include <utility>
 #include <vector>
 
-namespace
+namespace TGE::Tests::OptionsFixtures
 {
     struct NestedOptions
     {
@@ -101,7 +101,19 @@ namespace
         std::string endpoint { "localhost" };
         int retries { 3 };
     };
+}
 
+using TGE::Tests::OptionsFixtures::EncapsulatedOptions;
+using TGE::Tests::OptionsFixtures::EncapsulatedOptionsDto;
+using TGE::Tests::OptionsFixtures::FailingSaveDocument;
+using TGE::Tests::OptionsFixtures::FailingSaveOptions;
+using TGE::Tests::OptionsFixtures::InvariantOptions;
+using TGE::Tests::OptionsFixtures::NestedOptions;
+using TGE::Tests::OptionsFixtures::OtherOptions;
+using TGE::Tests::OptionsFixtures::TestOptions;
+
+namespace
+{
     class DirectProvider final : public TGE::IOptionsProvider<TestOptions>
     {
     public:

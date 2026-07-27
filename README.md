@@ -35,7 +35,7 @@ Core build requirements:
   - Windows: Microsoft Visual C++ (MSVC) with C++26/latest mode
   - macOS: Apple Clang with C++26/2c mode
   - Linux: GCC or Clang with C++26/2c mode
-- **[CMake](https://cmake.org/)** (3.25+ required)
+- **[CMake](https://cmake.org/)** (3.30+ required)
 - **[Ninja](https://ninja-build.org/)**
 
 TGE requires C++26 language mode for every target. Because compiler and

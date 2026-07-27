@@ -18,7 +18,7 @@ static_assert(std::is_abstract_v<TGE::IInputContext>);
 static_assert(std::is_abstract_v<TGE::IInputManager>);
 static_assert(std::is_abstract_v<TGE::IWindowInputContextFactory>);
 
-namespace
+namespace TGE::Tests::InstalledConsumer
 {
     struct ConsumerOptions
     {
@@ -28,6 +28,8 @@ namespace
         bool operator==(const ConsumerOptions&) const = default;
     };
 }
+
+using TGE::Tests::InstalledConsumer::ConsumerOptions;
 
 int main()
 {

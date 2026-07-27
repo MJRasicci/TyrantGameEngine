@@ -189,7 +189,7 @@ namespace TGE
 template<>
 struct std::hash<TGE::PhysicalKeyCode>
 {
-    constexpr std::size_t operator()(
+    std::size_t operator()(
         TGE::PhysicalKeyCode code) const noexcept
     {
         return std::hash<std::uint32_t> {}(code.Value());

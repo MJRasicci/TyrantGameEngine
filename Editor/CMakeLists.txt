@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.30)
 
 project(TGE_Editor LANGUAGES CXX)
 
@@ -12,7 +12,9 @@ endif()
 
 add_executable(tge_editor ${EDITOR_SOURCES})
 
-target_compile_features(tge_editor PUBLIC "cxx_std_${TGE_CXX_STANDARD}")
+target_compile_features(
+    tge_editor
+    PUBLIC "cxx_std_${TGE_CMAKE_CXX_STANDARD}")
 target_include_directories(tge_editor
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.30)
 
 if(NOT DEFINED TGE_TEST_CONFIG OR TGE_TEST_CONFIG STREQUAL "")
     set(TGE_TEST_CONFIG "@CMAKE_BUILD_TYPE@")

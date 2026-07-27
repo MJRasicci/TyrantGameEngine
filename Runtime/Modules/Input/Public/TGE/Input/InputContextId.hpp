@@ -53,7 +53,7 @@ namespace TGE
 template<>
 struct std::hash<TGE::InputContextId>
 {
-    constexpr std::size_t operator()(
+    std::size_t operator()(
         TGE::InputContextId id) const noexcept
     {
         return std::hash<std::uint64_t> {}(id.Value());

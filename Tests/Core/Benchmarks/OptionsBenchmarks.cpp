@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 
-namespace
+namespace TGE::Benchmarks::OptionsFixtures
 {
     struct BenchmarkOptions
     {
@@ -15,7 +15,12 @@ namespace
         std::uint64_t generation {};
         bool enabled { true };
     };
+}
 
+using TGE::Benchmarks::OptionsFixtures::BenchmarkOptions;
+
+namespace
+{
     void OptionsCurrent(benchmark::State& state)
     {
         auto monitor =

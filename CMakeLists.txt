@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.30)
 project(TyrantGameEngine VERSION 2.0.0.0 LANGUAGES C CXX)
 include(./CMake/Tyrant.cmake)
 include(CheckCXXSourceCompiles)
@@ -27,10 +27,20 @@ set(CPACK_PACKAGE_VERSION_PATCH ${CMAKE_PROJECT_VERSION_PATCH})
 # TGE intentionally targets the current C++ standard. Individual C++26
 # facilities are still probed below because compiler and standard-library
 # implementations ship them independently.
-set(CMAKE_CXX_STANDARD 26)
+set(TGE_CXX_STANDARD 26)
+set(TGE_CMAKE_CXX_STANDARD ${TGE_CXX_STANDARD})
+
+# MSVC exposes its evolving C++26 implementation through /std:c++latest.
+# Until CMake models that as a distinct C++26 level, requesting cxx_std_26
+# fails during generation before TGE's capability probes can run.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND
+   CMAKE_CXX_STANDARD_LATEST LESS TGE_CXX_STANDARD)
+  set(TGE_CMAKE_CXX_STANDARD 23)
+endif()
+
+set(CMAKE_CXX_STANDARD ${TGE_CMAKE_CXX_STANDARD})
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(TGE_CXX_STANDARD 26)
 
 # Enable folders in IDEs to organize targets
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -451,7 +461,9 @@ configure_file(
 # headers are parsed with the same configuration as the runtime.
 add_library(tge_build_options INTERFACE)
 add_library(TGE::build_options ALIAS tge_build_options)
-target_compile_features(tge_build_options INTERFACE "cxx_std_${TGE_CXX_STANDARD}")
+target_compile_features(
+  tge_build_options
+  INTERFACE "cxx_std_${TGE_CMAKE_CXX_STANDARD}")
 target_include_directories(
   tge_build_options
   INTERFACE

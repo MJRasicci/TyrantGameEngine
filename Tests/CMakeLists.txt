@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.30)
 
 find_package(GTest CONFIG QUIET)
 if(NOT GTest_FOUND OR NOT TARGET GTest::gmock_main)
