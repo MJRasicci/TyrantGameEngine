@@ -1,11 +1,12 @@
 # Typed live options
 
 TGE Options turns ordinary owning C++ value types into validated, composable,
-live configuration. It is designed around three boundaries:
+live configuration. It is designed around four boundaries:
 
 - option types contain data and defaults;
 - providers obtain partial configuration from external sources;
 - monitors atomically publish immutable snapshots to consumers.
+- stores are explicitly granted authority to persist one complete option type.
 
 Options does not depend on logging or application hosting. This keeps it usable
 while the dependency injection container and logging services themselves are
@@ -112,6 +113,108 @@ services.AddOptions<GameplayOptions>()
             options.cheats_enabled = false;
         });
 ```
+
+## Writable stores and trust boundaries
+
+Reading configuration and writing it are separate capabilities.
+`IOptionsProvider<T>` applies a source, while `IOptionsStore<T>` persists a
+complete `T` to one specific source. Environment providers never implement the
+store interface. `FromJsonFile` is also read-only from IOC's perspective:
+although the concrete JSON provider knows how to save, the convenience method
+does not retain or register that writable capability.
+
+Code must deliberately retain a JSON provider and expose only its store
+interface when runtime persistence is appropriate:
+
+```cpp
+auto userSettingsFile =
+    std::make_shared<TGE::JsonFileOptionsProvider<UserSettings>>(
+        "user-settings.json",
+        TGE::JsonFileOptionsProviderSettings {
+            .optional = true,
+            .reloadOnChange = true
+        });
+
+services.AddOptions<UserSettings>()
+    .AddProvider(userSettingsFile)
+    .Validate(IsValidUserSettings, "The user settings are invalid.");
+
+services.AddSingleton<TGE::IOptionsStore<UserSettings>>(
+    userSettingsFile);
+```
+
+The explicit singleton registration is the write-authority boundary. A
+settings controller can inject both the concrete monitor authority and the
+specific persistent store, while ordinary consumers continue to inject only
+`IOptionsMonitor<UserSettings>`:
+
+```cpp
+class UserSettingsController
+{
+public:
+    UserSettingsController(
+        std::shared_ptr<TGE::OptionsMonitor<UserSettings>> options,
+        std::shared_ptr<TGE::IOptionsStore<UserSettings>> store)
+        : options(std::move(options)),
+          store(std::move(store))
+    {
+    }
+
+    TGE::OptionsResult<void> Save(UserSettings next)
+    {
+        // Set runs the normal validators and updates every live consumer.
+        auto published = options->Set(next);
+        if (!published)
+        {
+            return std::unexpected(std::move(published.error()));
+        }
+
+        // Save persists exactly the validated value to this one store.
+        return store->Save(next);
+    }
+
+private:
+    std::shared_ptr<TGE::OptionsMonitor<UserSettings>> options;
+    std::shared_ptr<TGE::IOptionsStore<UserSettings>> store;
+};
+```
+
+The monitor publication and external write cannot form one transaction. If
+`Save` fails after `Set` succeeds, consumers hold a valid live-only value and
+the UI should report the persistence failure or offer a retry. Conversely,
+calling `Save` directly does not validate or publish. With
+`reloadOnChange = true`, a successful JSON save is observed asynchronously and
+passes through every provider and validator before publication. Without file
+watching, call `Reload()` explicitly when the saved source should be reapplied.
+
+`Save` does not alter precedence. A later environment, command-line, or remote
+provider still wins on reload. Because JSON stores write a full document,
+saving a merged monitor snapshot can accidentally copy a higher-priority
+override into the lower-priority file. Prefer a dedicated option type for each
+trust and mutability boundary: for example, `UserSettings` can be writable,
+while `ServerEndpointOptions` can compose a packaging-managed JSON file and
+read-only environment overrides. A `server.ini`-style JSON source remains
+read-only simply by using `FromJsonFile` without registering its store.
+
+The IOC container permits one `IOptionsStore<T>` registration for each `T`,
+making the mutable persistent owner unambiguous. Use distinct option types when
+two stores have different owners or security policies. Keyed stores can be
+introduced later if a real use case requires multiple writable layers for the
+same type.
+
+JSON `Save` is synchronous. It serializes before touching the destination,
+writes and flushes an exclusive sibling temporary file, then atomically replaces
+the fixed path captured by the provider. Any failure before replacement leaves
+the previous document intact and attempts to clean up the temporary file.
+Windows replacement uses a sibling recovery backup; if the operating system
+reports a partially completed replacement and automatic recovery also fails,
+`Save` returns an error and retains both recovery files instead of deleting the
+only copies. The store does not create parent directories. Concurrent saves
+through one provider are serialized and use last-writer-wins semantics. Atomic
+visibility is provided by normal local-filesystem rename/replace behavior;
+network filesystems may provide weaker guarantees. Existing Windows ACLs and
+POSIX permission bits are preserved when replacing a regular file; a new POSIX
+settings file starts owner-only.
 
 ## JSON serialization
 
@@ -382,4 +485,6 @@ independently testable.
 
 The Editor target provides a compiled end-to-end example combining application
 lifecycle, dependency injection, logging, JSON/environment options, validation,
-and change monitoring.
+change monitoring, and explicit JSON store injection. Starting the Editor does
+not write the file; a future settings UI calls the injected store only when the
+user chooses to persist a validated change.

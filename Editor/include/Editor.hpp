@@ -18,6 +18,29 @@ struct EditorOptions
 };
 
 /**
+ * @brief Settings-menu authority for validated publication and persistence.
+ */
+class EditorSettings final
+{
+public:
+    EditorSettings(
+        std::shared_ptr<TGE::OptionsMonitor<EditorOptions>> options,
+        std::shared_ptr<TGE::IOptionsStore<EditorOptions>> store);
+
+    /**
+     * @brief Validate, publish, and then persist one complete settings value.
+     *
+     * A persistence failure can leave a valid live-only value, which a real UI
+     * should report and allow the user to retry.
+     */
+    [[nodiscard]] TGE::OptionsResult<void> Save(EditorOptions value);
+
+private:
+    std::shared_ptr<TGE::OptionsMonitor<EditorOptions>> options;
+    std::shared_ptr<TGE::IOptionsStore<EditorOptions>> store;
+};
+
+/**
  * @brief Placeholder lifecycle service for the Tyrant editor.
  */
 class Editor final : public TGE::IHostedService
@@ -29,7 +52,8 @@ public:
     Editor(
         std::shared_ptr<TGE::Logger<Editor>> logger,
         std::shared_ptr<TGE::ApplicationLifetime> lifetime,
-        std::shared_ptr<TGE::IOptionsMonitor<EditorOptions>> options);
+        std::shared_ptr<TGE::IOptionsMonitor<EditorOptions>> options,
+        std::shared_ptr<EditorSettings> settings);
 
     /**
      * @brief Start the editor service.
@@ -45,5 +69,6 @@ private:
     std::shared_ptr<TGE::Logger<Editor>> logger;
     std::shared_ptr<TGE::ApplicationLifetime> lifetime;
     std::shared_ptr<TGE::IOptionsMonitor<EditorOptions>> options;
+    std::shared_ptr<EditorSettings> settings;
     TGE::OptionsSubscription optionsSubscription;
 };

@@ -2,18 +2,36 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <cerrno>
 #include <condition_variable>
+#include <cstdio>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <stop_token>
+#include <string>
 #include <string_view>
 #include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
+
+#if defined(_WIN32)
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif
+    #include <Windows.h>
+#else
+    #include <fcntl.h>
+    #include <sys/stat.h>
+    #include <sys/types.h>
+    #include <unistd.h>
+#endif
 
 namespace TGE::detail
 {
@@ -130,6 +148,469 @@ namespace TGE::detail
                 signature.size == revision.size &&
                 signature.contentHash == revision.contentHash;
         }
+
+        OptionsResult<void> FileIoFailure(
+            std::string_view source,
+            std::string_view operation,
+            const std::error_code& error)
+        {
+            return std::unexpected(OptionsError {
+                .code = OptionsErrorCode::Io,
+                .source = std::string(source),
+                .message = std::format(
+                    "{}: {}",
+                    operation,
+                    error.message())
+            });
+        }
+
+        OptionsResult<void> FileIoFailure(
+            std::string_view source,
+            std::string message)
+        {
+            return std::unexpected(OptionsError {
+                .code = OptionsErrorCode::Io,
+                .source = std::string(source),
+                .message = std::move(message)
+            });
+        }
+
+        class TemporaryPathGuard final
+        {
+        public:
+            explicit TemporaryPathGuard(std::filesystem::path pathValue)
+                : path(std::move(pathValue))
+            {
+            }
+
+            ~TemporaryPathGuard()
+            {
+                if (!path.empty())
+                {
+                    std::error_code ignored;
+                    std::filesystem::remove(path, ignored);
+                }
+            }
+
+            TemporaryPathGuard(const TemporaryPathGuard&) = delete;
+            TemporaryPathGuard& operator=(const TemporaryPathGuard&) = delete;
+
+            void Release() noexcept
+            {
+                path.clear();
+            }
+
+        private:
+            std::filesystem::path path;
+        };
+
+#if defined(_WIN32)
+        OptionsResult<void> WriteOptionsFileNative(
+            const std::filesystem::path& target,
+            std::string_view contents,
+            std::string_view source)
+        {
+            static std::atomic<std::uint64_t> nextTemporaryId {};
+
+            HANDLE file = INVALID_HANDLE_VALUE;
+            std::filesystem::path temporary;
+            std::filesystem::path backup;
+            DWORD creationError = ERROR_FILE_EXISTS;
+            for (std::uint32_t attempt = 0; attempt < 256; ++attempt)
+            {
+                const auto id =
+                    nextTemporaryId.fetch_add(1, std::memory_order_relaxed);
+                auto targetStem = target.filename().native();
+                constexpr std::size_t MaximumTemporaryStemLength = 48;
+                if (targetStem.size() > MaximumTemporaryStemLength)
+                {
+                    targetStem.resize(MaximumTemporaryStemLength);
+                }
+
+                const auto uniqueSuffix =
+                    std::to_wstring(GetCurrentProcessId()) +
+                    L"." +
+                    std::to_wstring(GetTickCount64()) +
+                    L"." +
+                    std::to_wstring(id);
+                const auto temporaryName =
+                    targetStem +
+                    L".tmp." +
+                    uniqueSuffix;
+                temporary = target.parent_path() / temporaryName;
+                backup = target.parent_path() /
+                    (targetStem + L".backup." + uniqueSuffix);
+
+                const DWORD backupAttributes =
+                    GetFileAttributesW(backup.c_str());
+                if (backupAttributes != INVALID_FILE_ATTRIBUTES)
+                {
+                    continue;
+                }
+
+                const auto backupInspectionError = GetLastError();
+                if (backupInspectionError != ERROR_FILE_NOT_FOUND &&
+                    backupInspectionError != ERROR_PATH_NOT_FOUND)
+                {
+                    return FileIoFailure(
+                        source,
+                        "A recovery backup path could not be inspected",
+                        std::error_code(
+                            static_cast<int>(backupInspectionError),
+                            std::system_category()));
+                }
+
+                file = CreateFileW(
+                    temporary.c_str(),
+                    GENERIC_WRITE,
+                    0,
+                    nullptr,
+                    CREATE_NEW,
+                    FILE_ATTRIBUTE_NORMAL,
+                    nullptr);
+                if (file != INVALID_HANDLE_VALUE)
+                {
+                    break;
+                }
+
+                creationError = GetLastError();
+                if (creationError != ERROR_FILE_EXISTS &&
+                    creationError != ERROR_ALREADY_EXISTS)
+                {
+                    return FileIoFailure(
+                        source,
+                        "The temporary options file could not be created",
+                        std::error_code(
+                            static_cast<int>(creationError),
+                            std::system_category()));
+                }
+            }
+
+            if (file == INVALID_HANDLE_VALUE)
+            {
+                return FileIoFailure(
+                    source,
+                    "A unique temporary options file could not be created.");
+            }
+
+            TemporaryPathGuard cleanup(temporary);
+
+            std::size_t offset = 0;
+            while (offset < contents.size())
+            {
+                const auto remaining = contents.size() - offset;
+                const auto chunk = static_cast<DWORD>(std::min<std::size_t>(
+                    remaining,
+                    std::numeric_limits<DWORD>::max()));
+                DWORD written = 0;
+                const BOOL writeSucceeded = WriteFile(
+                    file,
+                    contents.data() + offset,
+                    chunk,
+                    &written,
+                    nullptr);
+                if (!writeSucceeded ||
+                    written == 0)
+                {
+                    const auto writeError = writeSucceeded
+                        ? ERROR_WRITE_FAULT
+                        : GetLastError();
+                    CloseHandle(file);
+                    file = INVALID_HANDLE_VALUE;
+                    return FileIoFailure(
+                        source,
+                        "The temporary options file could not be written",
+                        std::error_code(
+                            static_cast<int>(writeError),
+                            std::system_category()));
+                }
+                offset += written;
+            }
+
+            if (!FlushFileBuffers(file))
+            {
+                const auto flushError = GetLastError();
+                CloseHandle(file);
+                file = INVALID_HANDLE_VALUE;
+                return FileIoFailure(
+                    source,
+                    "The temporary options file could not be flushed",
+                    std::error_code(
+                        static_cast<int>(flushError),
+                        std::system_category()));
+            }
+
+            if (!CloseHandle(file))
+            {
+                const auto closeError = GetLastError();
+                file = INVALID_HANDLE_VALUE;
+                return FileIoFailure(
+                    source,
+                    "The temporary options file could not be closed",
+                    std::error_code(
+                        static_cast<int>(closeError),
+                        std::system_category()));
+            }
+            file = INVALID_HANDLE_VALUE;
+
+            const DWORD attributes = GetFileAttributesW(target.c_str());
+            if (attributes != INVALID_FILE_ATTRIBUTES)
+            {
+                if (ReplaceFileW(
+                        target.c_str(),
+                        temporary.c_str(),
+                        backup.c_str(),
+                        0,
+                        nullptr,
+                        nullptr))
+                {
+                    if (!DeleteFileW(backup.c_str()))
+                    {
+                        const auto cleanupError = GetLastError();
+                        cleanup.Release();
+                        return FileIoFailure(
+                            source,
+                            "The options file was saved, but its temporary "
+                            "backup could not be removed",
+                            std::error_code(
+                                static_cast<int>(cleanupError),
+                                std::system_category()));
+                    }
+
+                    cleanup.Release();
+                    return {};
+                }
+
+                const auto replaceError = GetLastError();
+                if (replaceError ==
+                    ERROR_UNABLE_TO_MOVE_REPLACEMENT_2)
+                {
+                    if (MoveFileExW(
+                            backup.c_str(),
+                            target.c_str(),
+                            MOVEFILE_WRITE_THROUGH))
+                    {
+                        return FileIoFailure(
+                            source,
+                            "The options file replacement failed; the "
+                            "previous document was restored",
+                            std::error_code(
+                                static_cast<int>(replaceError),
+                                std::system_category()));
+                    }
+
+                    cleanup.Release();
+                    return FileIoFailure(
+                        source,
+                        std::format(
+                            "The options file replacement and recovery both "
+                            "failed. Recovery files were retained at {} and "
+                            "{}.",
+                            temporary.string(),
+                            backup.string()));
+                }
+
+                if (replaceError != ERROR_FILE_NOT_FOUND &&
+                    replaceError != ERROR_PATH_NOT_FOUND)
+                {
+                    return FileIoFailure(
+                        source,
+                        "The options file could not be atomically replaced",
+                        std::error_code(
+                            static_cast<int>(replaceError),
+                            std::system_category()));
+                }
+            }
+            else
+            {
+                const auto attributesError = GetLastError();
+                if (attributesError != ERROR_FILE_NOT_FOUND &&
+                    attributesError != ERROR_PATH_NOT_FOUND)
+                {
+                    return FileIoFailure(
+                        source,
+                        "The options file destination could not be inspected",
+                        std::error_code(
+                            static_cast<int>(attributesError),
+                            std::system_category()));
+                }
+            }
+
+            if (!MoveFileExW(
+                    temporary.c_str(),
+                    target.c_str(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+            {
+                const auto moveError = GetLastError();
+                return FileIoFailure(
+                    source,
+                    "The options file could not be atomically replaced",
+                    std::error_code(
+                        static_cast<int>(moveError),
+                        std::system_category()));
+            }
+
+            cleanup.Release();
+            return {};
+        }
+#else
+        OptionsResult<void> WriteOptionsFileNative(
+            const std::filesystem::path& target,
+            std::string_view contents,
+            std::string_view source)
+        {
+            std::optional<mode_t> destinationMode;
+            struct stat destinationStatus {};
+            if (::lstat(target.c_str(), &destinationStatus) == 0)
+            {
+                if (S_ISREG(destinationStatus.st_mode))
+                {
+                    constexpr mode_t PermissionBits =
+                        S_IRWXU | S_IRWXG | S_IRWXO;
+                    destinationMode =
+                        destinationStatus.st_mode & PermissionBits;
+                }
+            }
+            else if (errno != ENOENT)
+            {
+                return FileIoFailure(
+                    source,
+                    "The options file destination could not be inspected",
+                    std::error_code(errno, std::generic_category()));
+            }
+
+            auto targetStem = target.filename().native();
+            constexpr std::size_t MaximumTemporaryStemLength = 48;
+            if (targetStem.size() > MaximumTemporaryStemLength)
+            {
+                targetStem.resize(MaximumTemporaryStemLength);
+            }
+            auto temporaryPattern =
+                target.parent_path() /
+                (targetStem + ".tmp.XXXXXX");
+            auto nativePattern = temporaryPattern.native();
+            std::vector<char> mutablePattern(
+                nativePattern.begin(),
+                nativePattern.end());
+            mutablePattern.push_back('\0');
+
+            int descriptor = ::mkstemp(mutablePattern.data());
+            if (descriptor < 0)
+            {
+                return FileIoFailure(
+                    source,
+                    "The temporary options file could not be created",
+                    std::error_code(errno, std::generic_category()));
+            }
+
+            TemporaryPathGuard cleanup(
+                std::filesystem::path(mutablePattern.data()));
+            const auto closeIgnoringErrors = [&descriptor]() noexcept
+            {
+                if (descriptor >= 0)
+                {
+                    const int current = descriptor;
+                    descriptor = -1;
+                    static_cast<void>(::close(current));
+                }
+            };
+
+            if (::fcntl(descriptor, F_SETFD, FD_CLOEXEC) < 0)
+            {
+                const auto error =
+                    std::error_code(errno, std::generic_category());
+                closeIgnoringErrors();
+                return FileIoFailure(
+                    source,
+                    "The temporary options file could not be secured",
+                    error);
+            }
+
+            std::size_t offset = 0;
+            while (offset < contents.size())
+            {
+                const auto remaining = contents.size() - offset;
+                const auto chunk = std::min<std::size_t>(
+                    remaining,
+                    static_cast<std::size_t>(
+                        std::numeric_limits<ssize_t>::max()));
+
+                ssize_t written = 0;
+                do
+                {
+                    written = ::write(
+                        descriptor,
+                        contents.data() + offset,
+                        chunk);
+                }
+                while (written < 0 && errno == EINTR);
+
+                if (written <= 0)
+                {
+                    const auto error = written < 0
+                        ? std::error_code(errno, std::generic_category())
+                        : std::make_error_code(std::errc::io_error);
+                    closeIgnoringErrors();
+                    return FileIoFailure(
+                        source,
+                        "The temporary options file could not be written",
+                        error);
+                }
+                offset += static_cast<std::size_t>(written);
+            }
+
+            if (destinationMode &&
+                ::fchmod(descriptor, *destinationMode) < 0)
+            {
+                const auto error =
+                    std::error_code(errno, std::generic_category());
+                closeIgnoringErrors();
+                return FileIoFailure(
+                    source,
+                    "The options file permissions could not be preserved",
+                    error);
+            }
+
+            int flushResult = 0;
+            do
+            {
+                flushResult = ::fsync(descriptor);
+            }
+            while (flushResult < 0 && errno == EINTR);
+
+            if (flushResult < 0)
+            {
+                const auto error =
+                    std::error_code(errno, std::generic_category());
+                closeIgnoringErrors();
+                return FileIoFailure(
+                    source,
+                    "The temporary options file could not be flushed",
+                    error);
+            }
+
+            const int current = descriptor;
+            descriptor = -1;
+            if (::close(current) < 0)
+            {
+                return FileIoFailure(
+                    source,
+                    "The temporary options file could not be closed",
+                    std::error_code(errno, std::generic_category()));
+            }
+
+            if (::rename(mutablePattern.data(), target.c_str()) < 0)
+            {
+                return FileIoFailure(
+                    source,
+                    "The options file could not be atomically replaced",
+                    std::error_code(errno, std::generic_category()));
+            }
+
+            cleanup.Release();
+            return {};
+        }
+#endif
     }
 
     class OptionsFileWatchState final
@@ -231,13 +712,15 @@ namespace TGE::detail
                 std::filesystem::path pathValue,
                 std::chrono::milliseconds intervalValue,
                 std::function<bool()> callbackValue,
-                std::shared_ptr<OptionsFileWatchState> appliedStateValue)
+                std::shared_ptr<OptionsFileWatchState> appliedStateValue,
+                std::shared_ptr<std::mutex> fileMutexValue)
                 : path(std::move(pathValue)),
                   interval(std::max(
                       intervalValue,
                       std::chrono::milliseconds(10))),
                   callback(std::move(callbackValue)),
                   appliedState(std::move(appliedStateValue)),
+                  fileMutex(std::move(fileMutexValue)),
                   initialObservation(
                       appliedState
                           ? appliedState->ObserveCurrentThread(true)
@@ -305,7 +788,15 @@ namespace TGE::detail
                     FileSignature current;
                     try
                     {
-                        current = ReadSignature(path);
+                        if (fileMutex)
+                        {
+                            std::scoped_lock fileLock(*fileMutex);
+                            current = ReadSignature(path);
+                        }
+                        else
+                        {
+                            current = ReadSignature(path);
+                        }
                     }
                     catch (...)
                     {
@@ -422,6 +913,7 @@ namespace TGE::detail
             std::chrono::milliseconds interval;
             std::function<bool()> callback;
             std::shared_ptr<OptionsFileWatchState> appliedState;
+            std::shared_ptr<std::mutex> fileMutex;
             std::shared_ptr<OptionsFileWatchState::ApplyObservation>
                 initialObservation;
             std::optional<FileSignature> previous;
@@ -451,11 +943,43 @@ namespace TGE::detail
         }
     }
 
+    OptionsResult<void> WriteOptionsFileAtomically(
+        const std::filesystem::path& path,
+        std::string_view contents,
+        std::string_view source)
+    {
+        std::error_code pathError;
+        auto target = path.is_absolute()
+            ? path
+            : std::filesystem::absolute(path, pathError);
+        if (pathError)
+        {
+            return FileIoFailure(
+                source,
+                "The options file path could not be resolved",
+                pathError);
+        }
+
+        target = target.lexically_normal();
+        if (!target.has_filename())
+        {
+            return FileIoFailure(
+                source,
+                "The options store path must name a file.");
+        }
+
+        return WriteOptionsFileNative(
+            target,
+            contents,
+            source);
+    }
+
     OptionsSubscription WatchOptionsFile(
         std::filesystem::path path,
         std::chrono::milliseconds pollingInterval,
         std::function<bool()> callback,
-        std::shared_ptr<OptionsFileWatchState> appliedState)
+        std::shared_ptr<OptionsFileWatchState> appliedState,
+        std::shared_ptr<std::mutex> fileMutex)
     {
         if (!callback)
         {
@@ -466,7 +990,8 @@ namespace TGE::detail
             std::move(path),
             pollingInterval,
             std::move(callback),
-            std::move(appliedState));
+            std::move(appliedState),
+            std::move(fileMutex));
         state->Start();
 
         return OptionsSubscription(

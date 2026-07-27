@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <concepts>
 #include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
@@ -13,6 +14,7 @@
 #include <fstream>
 #include <functional>
 #include <future>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -53,6 +55,17 @@ namespace
     {
         std::uint64_t left {};
         std::uint64_t right {};
+    };
+
+    struct FailingSaveOptions
+    {
+        int count { 1 };
+        bool rejectSerialization { false };
+    };
+
+    struct FailingSaveDocument
+    {
+        int count { 1 };
     };
 
     class EncapsulatedOptions
@@ -314,6 +327,35 @@ namespace
             ASSERT_TRUE(stream.good());
         }
 
+        [[nodiscard]] std::string Read() const
+        {
+            std::ifstream stream(path, std::ios::binary);
+            return std::string(
+                std::istreambuf_iterator<char>(stream),
+                std::istreambuf_iterator<char> {});
+        }
+
+        [[nodiscard]] std::size_t TemporarySiblingCount() const
+        {
+            const auto temporaryPrefix =
+                path.filename().string() + ".tmp.";
+            const auto backupPrefix =
+                path.filename().string() + ".backup.";
+            std::size_t count = 0;
+            for (const auto& entry :
+                 std::filesystem::directory_iterator(path.parent_path()))
+            {
+                const auto filename =
+                    entry.path().filename().string();
+                if (filename.starts_with(temporaryPrefix) ||
+                    filename.starts_with(backupPrefix))
+                {
+                    ++count;
+                }
+            }
+            return count;
+        }
+
         std::filesystem::path path;
     };
 
@@ -378,6 +420,51 @@ struct TGE::OptionsSerializer<EncapsulatedOptions>
         return result;
     }
 };
+
+template<>
+struct TGE::OptionsSerializer<FailingSaveOptions>
+{
+    static TGE::OptionsResult<std::string> Serialize(
+        const FailingSaveOptions& value,
+        bool pretty = false)
+    {
+        if (value.rejectSerialization)
+        {
+            return std::unexpected(TGE::OptionsError {
+                .code = TGE::OptionsErrorCode::Serialization,
+                .source = {},
+                .message = "Serialization was rejected for testing."
+            });
+        }
+
+        return TGE::SerializeOptions(
+            FailingSaveDocument { .count = value.count },
+            pretty);
+    }
+
+    static TGE::OptionsResult<void> DeserializeInto(
+        FailingSaveOptions& value,
+        std::string_view serialized)
+    {
+        FailingSaveDocument document { .count = value.count };
+        auto result = TGE::DeserializeOptionsInto(document, serialized);
+        if (result)
+        {
+            value.count = document.count;
+        }
+        return result;
+    }
+};
+
+static_assert(std::derived_from<
+    TGE::JsonFileOptionsProvider<TestOptions>,
+    TGE::IOptionsStore<TestOptions>>);
+static_assert(!std::derived_from<
+    TGE::EnvironmentOptionsProvider<TestOptions>,
+    TGE::IOptionsStore<TestOptions>>);
+static_assert(!std::derived_from<
+    TGE::MemoryOptionsProvider<TestOptions>,
+    TGE::IOptionsStore<TestOptions>>);
 
 TEST(OptionsSerializationTests, RoundTripsOwningAggregates)
 {
@@ -510,6 +597,236 @@ TEST(OptionsProviderTests, ReadsOptionalAndRequiredJsonFiles)
     EXPECT_NO_THROW(builder.FromJsonFile(file.path));
     EXPECT_EQ(builder.GetMonitor()->Current()->name, "file");
     EXPECT_EQ(builder.GetMonitor()->Current()->count, 21);
+}
+
+TEST(OptionsStoreTests, JsonStoreCreatesAndRoundTripsACompleteDocument)
+{
+    TemporaryOptionsFile file;
+    auto json =
+        std::make_shared<TGE::JsonFileOptionsProvider<TestOptions>>(
+            file.path,
+            TGE::JsonFileOptionsProviderSettings { .optional = true });
+    std::shared_ptr<TGE::IOptionsStore<TestOptions>> store = json;
+
+    const TestOptions expected {
+        .name = "saved",
+        .count = 37,
+        .capacity = 4'096,
+        .tag = "persistent",
+        .nested = {
+            .enabled = false,
+            .values = { 2, 3, 5, 7 }
+        }
+    };
+
+    auto saved = store->Save(expected);
+    ASSERT_TRUE(saved) << saved.error().message;
+    EXPECT_TRUE(std::filesystem::is_regular_file(file.path));
+    EXPECT_EQ(file.TemporarySiblingCount(), 0u);
+#if !defined(_WIN32)
+    constexpr auto PermissionBits =
+        std::filesystem::perms::owner_all |
+        std::filesystem::perms::group_all |
+        std::filesystem::perms::others_all;
+    EXPECT_EQ(
+        std::filesystem::status(file.path).permissions() &
+            PermissionBits,
+        std::filesystem::perms::owner_read |
+            std::filesystem::perms::owner_write);
+#endif
+
+    auto deserialized =
+        TGE::DeserializeOptions<TestOptions>(file.Read(), json->Name());
+    ASSERT_TRUE(deserialized) << deserialized.error().message;
+    EXPECT_EQ(*deserialized, expected);
+
+    TestOptions applied;
+    auto appliedResult = json->Apply(applied);
+    ASSERT_TRUE(appliedResult) << appliedResult.error().message;
+    EXPECT_EQ(applied, expected);
+}
+
+TEST(OptionsStoreTests, ConcurrentSavesPublishOneCompleteDocument)
+{
+    TemporaryOptionsFile file;
+    auto json =
+        std::make_shared<TGE::JsonFileOptionsProvider<TestOptions>>(
+            file.path,
+            TGE::JsonFileOptionsProviderSettings { .optional = true });
+    const TestOptions first {
+        .name = std::string(32'768, 'A'),
+        .count = 1,
+        .capacity = 1'024,
+        .tag = "first",
+        .nested = {
+            .enabled = true,
+            .values = { 1, 1, 2, 3, 5 }
+        }
+    };
+    const TestOptions second {
+        .name = std::string(32'768, 'B'),
+        .count = 2,
+        .capacity = 2'048,
+        .tag = "second",
+        .nested = {
+            .enabled = false,
+            .values = { 8, 13, 21 }
+        }
+    };
+    std::atomic<int> failures {};
+
+    std::jthread firstWriter(
+        [&]
+        {
+            for (int attempt = 0; attempt < 8; ++attempt)
+            {
+                if (!json->Save(first))
+                {
+                    failures.fetch_add(1);
+                }
+            }
+        });
+    std::jthread secondWriter(
+        [&]
+        {
+            for (int attempt = 0; attempt < 8; ++attempt)
+            {
+                if (!json->Save(second))
+                {
+                    failures.fetch_add(1);
+                }
+            }
+        });
+    firstWriter.join();
+    secondWriter.join();
+
+    EXPECT_EQ(failures.load(), 0);
+    auto persisted =
+        TGE::DeserializeOptions<TestOptions>(file.Read());
+    ASSERT_TRUE(persisted) << persisted.error().message;
+    EXPECT_TRUE(*persisted == first || *persisted == second);
+    EXPECT_EQ(file.TemporarySiblingCount(), 0u);
+}
+
+#if !defined(_WIN32)
+TEST(OptionsStoreTests, ReplacingAFilePreservesPosixPermissionBits)
+{
+    TemporaryOptionsFile file;
+    file.Write(R"({"count":1})");
+    constexpr auto ExpectedPermissions =
+        std::filesystem::perms::owner_read |
+        std::filesystem::perms::owner_write |
+        std::filesystem::perms::group_read;
+    std::error_code permissionError;
+    std::filesystem::permissions(
+        file.path,
+        ExpectedPermissions,
+        std::filesystem::perm_options::replace,
+        permissionError);
+    ASSERT_FALSE(permissionError) << permissionError.message();
+
+    TGE::JsonFileOptionsProvider<TestOptions> json(file.path);
+    ASSERT_TRUE(json.Save(TestOptions {}));
+
+    constexpr auto PermissionBits =
+        std::filesystem::perms::owner_all |
+        std::filesystem::perms::group_all |
+        std::filesystem::perms::others_all;
+    EXPECT_EQ(
+        std::filesystem::status(file.path).permissions() &
+            PermissionBits,
+        ExpectedPermissions);
+}
+#endif
+
+TEST(OptionsStoreTests, SerializationFailurePreservesTheExistingDocument)
+{
+    TemporaryOptionsFile file;
+    file.Write("original bytes");
+    TGE::JsonFileOptionsProvider<FailingSaveOptions> json(file.path);
+
+    auto saved = json.Save(FailingSaveOptions {
+        .count = 42,
+        .rejectSerialization = true
+    });
+
+    ASSERT_FALSE(saved);
+    EXPECT_EQ(
+        saved.error().code,
+        TGE::OptionsErrorCode::Serialization);
+    EXPECT_EQ(saved.error().source, json.Name());
+    EXPECT_EQ(file.Read(), "original bytes");
+    EXPECT_EQ(file.TemporarySiblingCount(), 0u);
+}
+
+TEST(OptionsStoreTests, ReplacementFailurePreservesTheDestination)
+{
+    TemporaryOptionsFile destination;
+    std::error_code directoryError;
+    ASSERT_TRUE(std::filesystem::create_directory(
+        destination.path,
+        directoryError));
+    ASSERT_FALSE(directoryError) << directoryError.message();
+
+    TGE::JsonFileOptionsProvider<TestOptions> json(destination.path);
+    auto saved = json.Save(TestOptions {});
+
+    ASSERT_FALSE(saved);
+    EXPECT_EQ(saved.error().code, TGE::OptionsErrorCode::Io);
+    EXPECT_EQ(saved.error().source, json.Name());
+    EXPECT_TRUE(std::filesystem::is_directory(destination.path));
+    EXPECT_EQ(destination.TemporarySiblingCount(), 0u);
+}
+
+TEST(OptionsStoreTests, SavingDoesNotChangeProviderPrecedence)
+{
+    TemporaryOptionsFile file;
+    file.Write(R"({"count":5})");
+    ScopedEnvironmentVariable environmentCount(
+        "TGE_STORE_PRIORITY__COUNT",
+        "99");
+
+    auto json =
+        std::make_shared<TGE::JsonFileOptionsProvider<TestOptions>>(
+            file.path);
+    TGE::ServiceCollection services;
+    auto builder = services.AddOptions<TestOptions>();
+    builder
+        .AddProvider(json)
+        .FromEnvironment("TGE_STORE_PRIORITY");
+
+    ASSERT_EQ(builder.GetMonitor()->Current()->count, 99);
+
+    TestOptions persisted;
+    persisted.count = 7;
+    ASSERT_TRUE(json->Save(persisted));
+    ASSERT_TRUE(builder.GetMonitor()->Reload());
+    EXPECT_EQ(builder.GetMonitor()->Current()->count, 99);
+
+    TestOptions fileLayer;
+    ASSERT_TRUE(json->Apply(fileLayer));
+    EXPECT_EQ(fileLayer.count, 7);
+}
+
+TEST(OptionsStoreTests, SaveWithoutWatchingPersistsUntilExplicitReload)
+{
+    TemporaryOptionsFile file;
+    file.Write(R"({"count":5})");
+
+    auto json =
+        std::make_shared<TGE::JsonFileOptionsProvider<TestOptions>>(
+            file.path);
+    TGE::ServiceCollection services;
+    auto builder = services.AddOptions<TestOptions>();
+    builder.AddProvider(json);
+
+    TestOptions persisted;
+    persisted.count = 8;
+    ASSERT_TRUE(json->Save(persisted));
+    EXPECT_EQ(builder.GetMonitor()->Current()->count, 5);
+
+    ASSERT_TRUE(builder.GetMonitor()->Reload());
+    EXPECT_EQ(builder.GetMonitor()->Current()->count, 8);
 }
 
 TEST(OptionsProviderTests, ReadsTypedAndNestedEnvironmentValues)
@@ -1164,6 +1481,77 @@ TEST(OptionsMonitorTests, FileChangesReloadAllConsumers)
     EXPECT_EQ(monitor->Current()->count, 123);
 }
 
+TEST(OptionsStoreTests, WatchedSavesUseNormalValidationAndRecovery)
+{
+    TemporaryOptionsFile file;
+    file.Write(R"({"count":5})");
+
+    auto json =
+        std::make_shared<TGE::JsonFileOptionsProvider<TestOptions>>(
+            file.path,
+            TGE::JsonFileOptionsProviderSettings {
+                .optional = false,
+                .reloadOnChange = true,
+                .pollingInterval = std::chrono::milliseconds(20)
+            });
+    TGE::ServiceCollection services;
+    auto builder = services.AddOptions<TestOptions>();
+    builder
+        .AddProvider(json)
+        .Validate(
+            [](const TestOptions& options)
+            {
+                return options.count > 0;
+            },
+            "count must be positive");
+    auto monitor = builder.GetMonitor();
+
+    TestOptions accepted;
+    accepted.count = 12;
+    ASSERT_TRUE(json->Save(accepted));
+
+    const auto acceptedDeadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (monitor->Current()->count != 12 &&
+           std::chrono::steady_clock::now() < acceptedDeadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_EQ(monitor->Current()->count, 12);
+    EXPECT_FALSE(monitor->LastError());
+
+    TestOptions rejected;
+    rejected.count = 0;
+    ASSERT_TRUE(json->Save(rejected));
+
+    const auto rejectedDeadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!monitor->LastError() &&
+           std::chrono::steady_clock::now() < rejectedDeadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(monitor->LastError());
+    EXPECT_EQ(
+        monitor->LastError()->code,
+        TGE::OptionsErrorCode::Validation);
+    EXPECT_EQ(monitor->Current()->count, 12);
+
+    accepted.count = 13;
+    ASSERT_TRUE(json->Save(accepted));
+
+    const auto recoveryDeadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while ((monitor->Current()->count != 13 ||
+            monitor->LastError()) &&
+           std::chrono::steady_clock::now() < recoveryDeadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_EQ(monitor->Current()->count, 13);
+    EXPECT_FALSE(monitor->LastError());
+}
+
 TEST(OptionsMonitorTests, UnchangedFileDoesNotReplaceRuntimeUpdates)
 {
     TemporaryOptionsFile file;
@@ -1433,6 +1821,53 @@ TEST(OptionsMonitorTests, RequiredFileRecoveryRetriesTheRestoredRevision)
     }
     EXPECT_FALSE(monitor->LastError());
     EXPECT_EQ(monitor->Current()->count, 5);
+}
+
+TEST(OptionsIocTests, ExposesWritableJsonOnlyThroughExplicitRegistration)
+{
+    TemporaryOptionsFile file;
+    auto json =
+        std::make_shared<TGE::JsonFileOptionsProvider<TestOptions>>(
+            file.path,
+            TGE::JsonFileOptionsProviderSettings { .optional = true });
+
+    TGE::ServiceCollection services;
+    services.AddOptions<TestOptions>().AddProvider(json);
+    EXPECT_FALSE(services.Contains<TGE::IOptionsStore<TestOptions>>());
+
+    services.AddSingleton<TGE::IOptionsStore<TestOptions>>(json);
+    EXPECT_TRUE(services.Contains<TGE::IOptionsStore<TestOptions>>());
+
+    auto provider = services.BuildServiceProvider();
+    auto resolved =
+        provider->GetRequiredService<TGE::IOptionsStore<TestOptions>>();
+    auto scope = provider->CreateScope();
+    auto scoped =
+        scope->GetRequiredService<TGE::IOptionsStore<TestOptions>>();
+    const auto expectedStore =
+        std::static_pointer_cast<TGE::IOptionsStore<TestOptions>>(json);
+
+    EXPECT_EQ(resolved, expectedStore);
+    EXPECT_EQ(scoped, resolved);
+
+    TestOptions persisted;
+    persisted.name = "explicit capability";
+    ASSERT_TRUE(resolved->Save(persisted));
+    auto roundTrip =
+        TGE::DeserializeOptions<TestOptions>(file.Read());
+    ASSERT_TRUE(roundTrip) << roundTrip.error().message;
+    EXPECT_EQ(roundTrip->name, "explicit capability");
+}
+
+TEST(OptionsIocTests, ConvenienceSourcesDoNotGrantWriteAuthority)
+{
+    TemporaryOptionsFile file;
+    TGE::ServiceCollection services;
+    services.AddOptions<TestOptions>()
+        .FromJsonFile(file.path, { .optional = true })
+        .FromEnvironment("TGE_READ_ONLY_OPTIONS");
+
+    EXPECT_FALSE(services.Contains<TGE::IOptionsStore<TestOptions>>());
 }
 
 TEST(OptionsIocTests, RegistersReadOnlyAndConcreteSingletonsAcrossScopes)

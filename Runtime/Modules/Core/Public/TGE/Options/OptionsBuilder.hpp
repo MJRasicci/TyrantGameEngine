@@ -57,6 +57,10 @@ namespace TGE
 
         /**
          * @brief Apply a partial JSON file in the current source order.
+         *
+         * This convenience overload does not register write authority. Retain
+         * a JsonFileOptionsProvider and explicitly register its
+         * IOptionsStore interface when runtime persistence is intended.
          */
         OptionsBuilder& FromJsonFile(
             std::filesystem::path path,
