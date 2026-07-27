@@ -16,6 +16,7 @@ Tyrant Game Engine (TGE) is a modular, data-driven runtime focused on rapid iter
   - [Reflection-generated dependency injection](#reflection-generated-dependency-injection)
   - [Asynchronous execution backend](#asynchronous-execution-backend)
   - [Typed options serialization](#typed-options-serialization)
+  - [SDL desktop backend](#sdl-desktop-backend)
   - [Running Tests and Benchmarks](#running-tests-and-benchmarks)
   - [Packaging](#packaging)
   - [Workflow Shortcuts](#workflow-shortcuts)
@@ -200,6 +201,29 @@ reflection mode, even if the packaged runtime was built with it.
 
 The Glaze headers and license are packaged with installed TGE builds because
 serialization is part of the public template surface.
+
+### SDL desktop backend
+
+The private `SDLDesktop` module provides Tyrant's default desktop window and
+input backend. It is enabled by default, fetches the exact pinned SDL 3.4.12
+release, and builds SDL as a shared deployment dependency. To build a runtime
+without a default desktop backend:
+
+```bash
+cmake --preset linux-x64-debug -DTGE_MODULE_SDLDESKTOP=OFF
+```
+
+`GuiApplication::UseDefaultDesktopBackend()` registers the public
+`IWindowManager`, `IInputManager`, and window/input bridge while keeping every
+SDL type behind private implementation contracts. One caller-driven event loop
+serializes window and input platform work. SDL rendering, Vulkan surfaces,
+OpenGL contexts, native handles, and application-lifecycle ownership are
+explicitly outside this module.
+
+Installed static and shared runtimes include the required SDL shared artifact
+and license notice. See the [Input architecture](Docs/Pages/Input.md) and
+[windowing backend architecture](Docs/Pages/WindowingBackends.md) for the
+public ownership, threading, capability, and rendering boundaries.
 
 ### Running Tests and Benchmarks
 
