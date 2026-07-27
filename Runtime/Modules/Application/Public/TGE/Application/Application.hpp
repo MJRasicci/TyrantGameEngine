@@ -5,16 +5,19 @@
 
 #pragma once
 
+#include <concepts>
+#include <functional>
 #include <memory>
+#include <type_traits>
 
 #include "TGE/Application/ApplicationState.hpp"
+#include "TGE/Application/IHostedService.hpp"
 #include "TGE/Execution/Task.hpp"
 #include "TGE/Export.hpp"
+#include "TGE/Services/ServiceCollection.hpp"
 
 namespace TGE
 {
-    class ServiceCollection;
-
     /**
      * @class Application
      * @brief Configures services and executes one application lifecycle.
@@ -53,6 +56,19 @@ namespace TGE
         ServiceCollection& Services() &;
 
         /**
+         * @brief Register a singleton service managed by this Application.
+         *
+         * Hosted services start in registration order and stop in reverse
+         * successful-start order. The lifecycle designation belongs to the
+         * Application rather than to the dependency-injection container.
+         */
+        template<class TService>
+            requires IService<TService> &&
+                     std::derived_from<TService, IHostedService> &&
+                     (!std::is_abstract_v<TService>)
+        void AddHostedService() &;
+
+        /**
          * @brief Execute the complete lifecycle while blocking this thread.
          */
         int Run() &;
@@ -76,7 +92,26 @@ namespace TGE
         ApplicationState GetState() const noexcept;
 
     private:
+        using HostedServiceResolver =
+            std::function<std::shared_ptr<IHostedService>(ServiceLocator&)>;
+
+        void RegisterHostedService(HostedServiceResolver resolver);
+
         struct Impl;
         std::unique_ptr<Impl> impl;
     };
+
+    template<class TService>
+        requires IService<TService> &&
+                 std::derived_from<TService, IHostedService> &&
+                 (!std::is_abstract_v<TService>)
+    void Application::AddHostedService() &
+    {
+        Services().template AddSingleton<TService>();
+        RegisterHostedService(
+            [](ServiceLocator& locator) -> std::shared_ptr<IHostedService>
+            {
+                return locator.template GetRequiredService<TService>();
+            });
+    }
 }

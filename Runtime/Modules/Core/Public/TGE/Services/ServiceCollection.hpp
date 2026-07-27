@@ -12,9 +12,7 @@
 #include <typeindex>
 #include <type_traits>
 #include <unordered_map>
-#include <vector>
 
-#include "TGE/Application/IHostedService.hpp"
 #include "TGE/Export.hpp"
 #include "TGE/Options/OptionsConcepts.hpp"
 #include "TGE/Services/ServiceDescriptor.hpp"
@@ -102,18 +100,6 @@ namespace TGE
         void AddTransient(std::function<std::shared_ptr<TService>(ServiceLocator&)> factory);
 
         /**
-         * @brief Register a singleton service managed by Application lifecycle.
-         *
-         * Hosted services are started in registration order and stopped in
-         * reverse registration order.
-         */
-        template<class TService>
-            requires IService<TService> &&
-                     std::derived_from<TService, IHostedService> &&
-                     (!std::is_abstract_v<TService>)
-        void AddHostedService();
-
-        /**
          * @brief Test whether a service type already has a registration.
          */
         template<class TService>
@@ -163,10 +149,6 @@ namespace TGE
          * @brief Insert a descriptor into the registry with duplicate detection.
          */
         void Register(ServiceDescriptor descriptor);
-
-        void RegisterHostedService(
-            ServiceDescriptor descriptor,
-            std::function<std::shared_ptr<IHostedService>(ServiceLocator&)> factory);
 
         bool Contains(std::type_index serviceType) const noexcept;
 

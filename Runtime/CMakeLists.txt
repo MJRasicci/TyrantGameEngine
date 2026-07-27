@@ -7,6 +7,7 @@ cmake_minimum_required(VERSION 3.25)
 # Register modules
 # Core module lives at Runtime/Modules/Core/{Public,Private}
 TGE_MODULE(Core REQUIRED)
+TGE_MODULE(Application REQUIRED DEPS Core)
 TGE_MODULE(Graphics REQUIRED DEPS Core)
 
 # In future:

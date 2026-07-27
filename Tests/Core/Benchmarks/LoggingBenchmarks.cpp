@@ -1,8 +1,7 @@
 #include <benchmark/benchmark.h>
 
+#include "TGE/Logging/GlobalLogger.hpp"
 #include "TGE/Logging/LoggingOptions.hpp"
-
-#include "Internal/Logging/GlobalLogger.hpp"
 
 #include <memory>
 

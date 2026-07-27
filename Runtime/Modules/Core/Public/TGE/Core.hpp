@@ -1,20 +1,15 @@
 #pragma once
 
 // Convenience header that pulls in the complete public surface area of the
-// Core runtime module.  Applications can include this single header to access
-// logging facilities and the module export macros without worrying about the
-// underlying folder layout.
+// Core runtime module. Consumers can include this single header for dependency
+// injection, execution, logging, and options primitives.
 
 #include "TGE/Export.hpp"
 #include "TGE/Features.hpp"
 
-#include "TGE/Application/Application.hpp"
-#include "TGE/Application/ApplicationLifetime.hpp"
-#include "TGE/Application/ApplicationState.hpp"
-#include "TGE/Application/IHostedService.hpp"
-
 #include "TGE/Execution/Task.hpp"
 
+#include "TGE/Logging/GlobalLogger.hpp"
 #include "TGE/Logging/ILogDispatcher.hpp"
 #include "TGE/Logging/ILogSink.hpp"
 #include "TGE/Logging/LogFormatter.hpp"

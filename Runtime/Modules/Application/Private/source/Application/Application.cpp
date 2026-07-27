@@ -12,9 +12,10 @@
 #include "TGE/Logging/ILogDispatcher.hpp"
 #include "TGE/Logging/Logger.hpp"
 #include "TGE/Services/ServiceCollection.hpp"
+#include "TGE/Services/ServiceLocator.hpp"
 #include "TGE/Services/ServiceProvider.hpp"
 
-#include "Internal/Logging/GlobalLogger.hpp"
+#include "TGE/Logging/GlobalLogger.hpp"
 
 namespace TGE
 {
@@ -37,6 +38,7 @@ namespace TGE
         std::shared_ptr<ApplicationLifetime> lifetime;
         std::shared_ptr<ServiceProvider> provider;
         std::shared_ptr<Logger<Application>> logger;
+        std::vector<HostedServiceResolver> hostedServiceResolvers;
     };
 
     Application::Application()
@@ -104,7 +106,12 @@ namespace TGE
 
             impl->logger->Debug("Configured application service provider");
 
-            auto hostedServices = impl->provider->GetHostedServices();
+            std::vector<std::shared_ptr<IHostedService>> hostedServices;
+            hostedServices.reserve(impl->hostedServiceResolvers.size());
+            for (const auto& resolve : impl->hostedServiceResolvers)
+            {
+                hostedServices.emplace_back(resolve(*impl->provider));
+            }
             startedServices.reserve(hostedServices.size());
 
             const auto stopping = impl->lifetime->GetStoppingToken();
@@ -219,5 +226,16 @@ namespace TGE
     ApplicationState Application::GetState() const noexcept
     {
         return impl->state.load();
+    }
+
+    void Application::RegisterHostedService(HostedServiceResolver resolver)
+    {
+        if (impl->state.load() != ApplicationState::Created)
+        {
+            throw std::logic_error(
+                "Hosted services cannot be added after execution starts.");
+        }
+
+        impl->hostedServiceResolvers.emplace_back(std::move(resolver));
     }
 }

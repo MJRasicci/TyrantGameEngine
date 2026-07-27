@@ -1,5 +1,6 @@
 #pragma once
 
+#include "TGE/Application.hpp"
 #include "TGE/Core.hpp"
 
 #include <cstdint>

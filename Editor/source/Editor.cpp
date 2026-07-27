@@ -113,7 +113,7 @@ int main()
     application.Services().AddSingleton<EditorSettings>();
 
     application.Services().AddTransient<TGE::Logger<Editor>>();
-    application.Services().AddHostedService<Editor>();
+    application.AddHostedService<Editor>();
 
     return application.Run();
 }

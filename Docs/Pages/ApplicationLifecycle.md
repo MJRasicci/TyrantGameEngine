@@ -5,10 +5,12 @@ engine process. Applications are configured through service registration rather
 than inheritance:
 
 ```cpp
+#include <TGE/Application.hpp>
+
 auto application = TGE::Application::Create();
 
 application.Services().AddSingleton<IClock, Clock>();
-application.Services().AddHostedService<MyTool>();
+application.AddHostedService<MyTool>();
 
 return application.Run();
 ```
@@ -42,6 +44,10 @@ continues stopping the remaining services before propagating it.
 Hosted services are singleton registrations. Ordinary DI registrations remain
 unique by service type, while any number of distinct hosted-service
 implementations can participate in one application.
+
+The hosted-service list belongs to `Application`, not the Core dependency
+injection container. This keeps lifecycle orchestration out of Core while
+still resolving hosted service dependencies from the completed provider.
 
 ## Shutdown
 

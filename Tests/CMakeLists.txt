@@ -44,6 +44,7 @@ endif()
 
 # Register runtime module test suites here
 TGE_TEST_MODULE(Core)
+TGE_TEST_MODULE(Application)
 TGE_TEST_MODULE(Graphics)
 
 # Exercise the installed public surface from a clean downstream project. Cross

@@ -71,20 +71,6 @@ namespace TGE
     }
 
     template<class TService>
-        requires IService<TService> &&
-                 std::derived_from<TService, IHostedService> &&
-                 (!std::is_abstract_v<TService>)
-    void ServiceCollection::AddHostedService()
-    {
-        RegisterHostedService(
-            ServiceDescriptor::Singleton<TService>(),
-            [](ServiceLocator& locator) -> std::shared_ptr<IHostedService>
-            {
-                return locator.template GetRequiredService<TService>();
-            });
-    }
-
-    template<class TService>
         requires IService<TService>
     bool ServiceCollection::Contains() const noexcept
     {

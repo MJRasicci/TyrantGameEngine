@@ -1,3 +1,8 @@
+/**
+ * @file GlobalLogger.hpp
+ * @brief Default process-wide asynchronous log dispatcher.
+ */
+
 #pragma once
 
 #include "TGE/Export.hpp"

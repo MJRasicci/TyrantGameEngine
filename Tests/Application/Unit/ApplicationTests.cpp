@@ -342,8 +342,8 @@ TEST(ApplicationTests, RunsHostedServicesInLifecycleOrder)
     auto record = std::make_shared<LifecycleRecord>();
 
     application.Services().AddSingleton(record);
-    application.Services().AddHostedService<FirstHostedService>();
-    application.Services().AddHostedService<StoppingHostedService>();
+    application.AddHostedService<FirstHostedService>();
+    application.AddHostedService<StoppingHostedService>();
 
     EXPECT_EQ(application.Run(), 7);
     EXPECT_EQ(application.GetState(), TGE::ApplicationState::Stopped);
@@ -363,7 +363,7 @@ TEST(ApplicationTests, ExposesComposableAsynchronousEntrypoint)
     auto record = std::make_shared<LifecycleRecord>();
 
     application.Services().AddSingleton(record);
-    application.Services().AddHostedService<StoppingHostedService>();
+    application.AddHostedService<StoppingHostedService>();
 
     auto result = TGE::Execution::SyncWait(application.RunAsync());
 
@@ -378,8 +378,8 @@ TEST(ApplicationTests, StopsStartedServicesWhenStartupFails)
     auto record = std::make_shared<LifecycleRecord>();
 
     application.Services().AddSingleton(record);
-    application.Services().AddHostedService<FirstHostedService>();
-    application.Services().AddHostedService<FailingHostedService>();
+    application.AddHostedService<FirstHostedService>();
+    application.AddHostedService<FailingHostedService>();
 
     EXPECT_THROW(application.Run(), std::runtime_error);
     EXPECT_EQ(application.GetState(), TGE::ApplicationState::Failed);
@@ -398,8 +398,8 @@ TEST(ApplicationTests, StopsStartedServicesWhenStartupIsCancelled)
     auto record = std::make_shared<LifecycleRecord>();
 
     application.Services().AddSingleton(record);
-    application.Services().AddHostedService<FirstHostedService>();
-    application.Services().AddHostedService<CancelledStartService>();
+    application.AddHostedService<FirstHostedService>();
+    application.AddHostedService<CancelledStartService>();
 
     EXPECT_THROW(application.Run(), std::runtime_error);
     EXPECT_EQ(application.GetState(), TGE::ApplicationState::Failed);
@@ -421,7 +421,7 @@ TEST(ApplicationTests, WaitsForStopRequestFromAnotherThread)
 
     application.Services().AddSingleton(record);
     application.Services().AddSingleton(signal);
-    application.Services().AddHostedService<WaitingHostedService>();
+    application.AddHostedService<WaitingHostedService>();
 
     std::jthread requester([&]
     {
@@ -452,9 +452,9 @@ TEST(ApplicationTests, ContinuesStoppingServicesAfterShutdownFailure)
     auto record = std::make_shared<LifecycleRecord>();
 
     application.Services().AddSingleton(record);
-    application.Services().AddHostedService<FirstHostedService>();
-    application.Services().AddHostedService<FailingStopService>();
-    application.Services().AddHostedService<StoppingHostedService>();
+    application.AddHostedService<FirstHostedService>();
+    application.AddHostedService<FailingStopService>();
+    application.AddHostedService<StoppingHostedService>();
 
     EXPECT_THROW(application.Run(), std::runtime_error);
     EXPECT_EQ(application.GetState(), TGE::ApplicationState::Failed);
@@ -476,9 +476,9 @@ TEST(ApplicationTests, ContinuesStoppingServicesAfterShutdownCancellation)
     auto record = std::make_shared<LifecycleRecord>();
 
     application.Services().AddSingleton(record);
-    application.Services().AddHostedService<FirstHostedService>();
-    application.Services().AddHostedService<CancelledStopService>();
-    application.Services().AddHostedService<StoppingHostedService>();
+    application.AddHostedService<FirstHostedService>();
+    application.AddHostedService<CancelledStopService>();
+    application.AddHostedService<StoppingHostedService>();
 
     EXPECT_THROW(application.Run(), std::runtime_error);
     EXPECT_EQ(application.GetState(), TGE::ApplicationState::Failed);
@@ -502,8 +502,8 @@ TEST(ApplicationTests, ContinuesShutdownWhenStoppingLogThrows)
 
     application.Services().AddSingleton<TGE::ILogDispatcher>(dispatcher);
     application.Services().AddSingleton(record);
-    application.Services().AddHostedService<FirstHostedService>();
-    application.Services().AddHostedService<StoppingHostedService>();
+    application.AddHostedService<FirstHostedService>();
+    application.AddHostedService<StoppingHostedService>();
 
     EXPECT_THROW(application.Run(), std::runtime_error);
     EXPECT_EQ(application.GetState(), TGE::ApplicationState::Failed);
@@ -525,7 +525,7 @@ TEST(ApplicationTests, ConsumerRegistrationReplacesDefaultLogging)
 
     application.Services().AddSingleton<TGE::ILogDispatcher, NoopDispatcher>();
     application.Services().AddSingleton(record);
-    application.Services().AddHostedService<StoppingHostedService>();
+    application.AddHostedService<StoppingHostedService>();
 
     EXPECT_EQ(application.Run(), 7);
 }
@@ -536,7 +536,7 @@ TEST(ApplicationTests, ApplicationInstancesAreSingleUse)
     auto record = std::make_shared<LifecycleRecord>();
 
     application.Services().AddSingleton(record);
-    application.Services().AddHostedService<StoppingHostedService>();
+    application.AddHostedService<StoppingHostedService>();
 
     ASSERT_EQ(application.Run(), 7);
     EXPECT_THROW(application.Run(), std::logic_error);

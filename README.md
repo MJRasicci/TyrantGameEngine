@@ -269,6 +269,7 @@ dependencies and one or more `TGE::IHostedService` implementations, then choose
 the blocking or asynchronous entrypoint:
 
 ```cpp
+#include <TGE/Application.hpp>
 #include <TGE/Core.hpp>
 
 class Tool final : public TGE::IHostedService
@@ -303,7 +304,7 @@ TGE_DECLARE_SERVICE_DEPENDENCIES(
 int main()
 {
     auto application = TGE::Application::Create();
-    application.Services().AddHostedService<Tool>();
+    application.AddHostedService<Tool>();
     return application.Run();
 }
 ```

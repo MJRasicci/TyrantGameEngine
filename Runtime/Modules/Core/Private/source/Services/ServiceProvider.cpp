@@ -5,7 +5,6 @@
 #include <utility>
 #include <vector>
 
-#include "TGE/Application/IHostedService.hpp"
 #include "TGE/Execution/Task.hpp"
 #include "TGE/Services/ServiceProvider.hpp"
 
@@ -160,19 +159,6 @@ namespace TGE
     {
         return std::shared_ptr<ServiceScope>(
             new ServiceScope(shared_from_this(), {}));
-    }
-
-    std::vector<std::shared_ptr<IHostedService>> ServiceProvider::GetHostedServices()
-    {
-        std::vector<std::shared_ptr<IHostedService>> services;
-        services.reserve(GetRegistry()->hostedServiceFactories.size());
-
-        for (const auto& factory : GetRegistry()->hostedServiceFactories)
-        {
-            services.emplace_back(factory(*this));
-        }
-
-        return services;
     }
 
     ServiceScope::ServiceScope(
