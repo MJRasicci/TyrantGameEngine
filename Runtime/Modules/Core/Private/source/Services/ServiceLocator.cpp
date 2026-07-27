@@ -11,6 +11,15 @@
 
 namespace
 {
+    struct ResolutionFrame
+    {
+        TGE::ServiceLocator* locator;
+        std::vector<std::type_index> path;
+        ResolutionFrame* previous;
+    };
+
+    thread_local ResolutionFrame* activeResolutionFrame = nullptr;
+
     std::string BuildCycleMessage(const std::vector<std::type_index>& path, std::type_index repeated)
     {
         auto begin = std::find(path.begin(), path.end(), repeated);
@@ -42,34 +51,44 @@ namespace TGE
 {
     ServiceLocator::ServiceLocator(std::shared_ptr<detail::ServiceRegistry> registry,
                                    std::unordered_map<std::type_index, ActivationHandle>* singletonCache,
-                                   ServiceLocator* root,
-                                   ServiceLocator* parent)
+                                   std::recursive_mutex* transactionMutex)
         : registry(std::move(registry)),
           singletonCache(singletonCache),
-          rootLocator(root),
-          parentLocator(parent)
+          transactionMutex(transactionMutex)
     {
     }
 
     ServiceLocator::ResolutionResult ServiceLocator::Resolve(std::type_index type, bool required)
     {
-        if (activePath)
+        std::scoped_lock transaction(GetTransactionMutex());
+        ValidateResolutionAllowed();
+
+        for (auto* frame = activeResolutionFrame;
+             frame;
+             frame = frame->previous)
         {
-            return ResolveInternal(type, *activePath, required);
+            if (frame->locator == this)
+            {
+                return ResolveInternal(type, frame->path, required);
+            }
         }
 
-        std::vector<std::type_index> localPath;
-        activePath = &localPath;
+        ResolutionFrame frame {
+            .locator = this,
+            .path = {},
+            .previous = activeResolutionFrame
+        };
+        activeResolutionFrame = &frame;
 
         try
         {
-            auto result = ResolveInternal(type, localPath, required);
-            activePath = nullptr;
+            auto result = ResolveInternal(type, frame.path, required);
+            activeResolutionFrame = frame.previous;
             return result;
         }
         catch (...)
         {
-            activePath = nullptr;
+            activeResolutionFrame = frame.previous;
             throw;
         }
     }
@@ -118,6 +137,10 @@ namespace TGE
             throw;
         }
 
+        // A factory may re-enter the scope lifecycle while the provider's
+        // recursive transaction lock is held. Never commit an activation to a
+        // scope that began ending during that user-supplied activation.
+        ValidateResolutionAllowed();
         CacheInstance(lifetime, descriptor->GetServiceType(), instance);
 
         return { descriptor, instance };
@@ -180,10 +203,42 @@ namespace TGE
                 }
                 break;
             case ServiceLifetime::Scoped:
-                scopedCache.emplace(type, instance);
+            {
+                const auto [_, inserted] = scopedCache.emplace(type, instance);
+                if (inserted)
+                {
+                    scopedActivationOrder.emplace_back(type);
+                }
                 break;
+            }
             case ServiceLifetime::Transient:
                 break;
         }
+    }
+
+    std::vector<ServiceLocator::ActivationHandle>
+        ServiceLocator::ExtractScopedInstancesInReverse()
+    {
+        std::vector<ActivationHandle> instances;
+        instances.reserve(scopedActivationOrder.size());
+
+        for (auto type = scopedActivationOrder.rbegin();
+             type != scopedActivationOrder.rend();
+             ++type)
+        {
+            if (auto cached = scopedCache.find(*type);
+                cached != scopedCache.end())
+            {
+                instances.emplace_back(std::move(cached->second));
+            }
+        }
+
+        scopedCache.clear();
+        scopedActivationOrder.clear();
+        return instances;
+    }
+
+    void ServiceLocator::ValidateResolutionAllowed() const
+    {
     }
 }

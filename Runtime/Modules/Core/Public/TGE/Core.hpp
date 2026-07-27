@@ -33,4 +33,5 @@
 #include "TGE/Services/ServiceLifetime.hpp"
 #include "TGE/Services/ServiceLocator.hpp"
 #include "TGE/Services/ServiceProvider.hpp"
+#include "TGE/Services/ServiceScopeState.hpp"
 #include "TGE/Services/ServiceTraits.hpp"

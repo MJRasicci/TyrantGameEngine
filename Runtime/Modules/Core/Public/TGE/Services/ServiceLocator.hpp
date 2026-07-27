@@ -6,6 +6,7 @@
 #pragma once
 
 #include <any>
+#include <mutex>
 #include <memory>
 #include <stdexcept>
 #include <typeindex>
@@ -48,12 +49,24 @@ namespace TGE
     protected:
         ServiceLocator(std::shared_ptr<detail::ServiceRegistry> registry,
                        std::unordered_map<std::type_index, ActivationHandle>* singletonCache,
-                       ServiceLocator* root,
-                       ServiceLocator* parent);
+                       std::recursive_mutex* transactionMutex);
 
         virtual ~ServiceLocator() = default;
 
         const std::shared_ptr<detail::ServiceRegistry>& GetRegistry() const noexcept { return registry; }
+        std::recursive_mutex& GetTransactionMutex() const noexcept { return *transactionMutex; }
+
+        /**
+         * @brief Remove cached scoped instances in reverse activation order.
+         *
+         * The caller must hold the shared provider transaction mutex.
+         */
+        std::vector<ActivationHandle> ExtractScopedInstancesInReverse();
+
+        /**
+         * @brief Reject resolution when a derived locator is no longer usable.
+         */
+        virtual void ValidateResolutionAllowed() const;
 
     private:
 
@@ -71,12 +84,10 @@ namespace TGE
 
         std::shared_ptr<detail::ServiceRegistry> registry;
         std::unordered_map<std::type_index, ActivationHandle>* singletonCache;
-        ServiceLocator* rootLocator;
-        ServiceLocator* parentLocator;
+        std::recursive_mutex* transactionMutex;
         std::unordered_map<std::type_index, ActivationHandle> scopedCache;
-        std::vector<std::type_index>* activePath { nullptr };
+        std::vector<std::type_index> scopedActivationOrder;
     };
 }
 
 #include "TGE/Services/ServiceLocator.inl"
-
