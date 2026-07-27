@@ -18,6 +18,8 @@
 #include <vector>
 
 #include "Internal/Desktop/DesktopEventRuntime.hpp"
+#include "Internal/Graphics/IWindowPresentationTargetProvider.hpp"
+#include "Internal/Graphics/IWindowPresenter.hpp"
 #include "Internal/Graphics/IWindowPlatform.hpp"
 #include "TGE/Graphics/IWindow.hpp"
 
@@ -128,7 +130,10 @@ namespace TGE::Internal
 
         static std::shared_ptr<State> Create(
             std::shared_ptr<DesktopEventRuntime> runtime,
-            std::unique_ptr<IWindowPlatform> platform)
+            std::unique_ptr<IWindowPlatform> platform,
+            std::unique_ptr<IWindowPresentationTargetProvider>
+                presentationTargetProvider,
+            std::unique_ptr<IWindowPresenter> presenter)
         {
             if (!runtime)
             {
@@ -140,10 +145,20 @@ namespace TGE::Internal
                 throw std::invalid_argument(
                     "A window manager requires a platform implementation.");
             }
+            if (static_cast<bool>(presentationTargetProvider) !=
+                static_cast<bool>(presenter))
+            {
+                throw std::invalid_argument(
+                    "A window manager requires both a presentation-target "
+                    "provider and presenter when presentation is configured.");
+            }
 
             auto result = std::shared_ptr<State>(new State);
             result->runtime = std::move(runtime);
             result->platform = std::move(platform);
+            result->presentationTargetProvider =
+                std::move(presentationTargetProvider);
+            result->presenter = std::move(presenter);
             result->platform->SetEventSink(result.get());
             return result;
         }
@@ -332,6 +347,10 @@ namespace TGE::Internal
                     [self]
                     {
                         self->DestroyAllOnDispatcher();
+                        if (self->presenter)
+                        {
+                            self->presenter->Shutdown();
+                        }
                         self->platform->SetEventSink(nullptr);
                         self->platform->Shutdown();
                     });
@@ -408,6 +427,10 @@ namespace TGE::Internal
             }
             catch (...)
             {
+                if (presenter)
+                {
+                    presenter->Shutdown();
+                }
                 platform->SetEventSink(nullptr);
                 MarkAllDestroyed(
                     WindowCloseReason::ApplicationRequest);
@@ -438,12 +461,15 @@ namespace TGE::Internal
                 AbandonAllWindows();
 
                 auto deferredPlatform = platform;
+                auto deferredPresenter = presenter;
                 if (const auto currentRuntime = runtime.lock())
                 {
                     (void)currentRuntime->Post(
                         [
                             deferredPlatform =
                                 std::move(deferredPlatform),
+                            deferredPresenter =
+                                std::move(deferredPresenter),
                             deferredWindows =
                                 std::move(deferredWindows)
                         ]() noexcept
@@ -452,11 +478,19 @@ namespace TGE::Internal
                             {
                                 try
                                 {
+                                    if (deferredPresenter)
+                                    {
+                                        deferredPresenter->DetachWindow(id);
+                                    }
                                     (void)deferredPlatform->DestroyWindow(id);
                                 }
                                 catch (...)
                                 {
                                 }
+                            }
+                            if (deferredPresenter)
+                            {
+                                deferredPresenter->Shutdown();
                             }
                             deferredPlatform->Shutdown();
                         });
@@ -527,6 +561,52 @@ namespace TGE::Internal
             {
                 // Backends report events through a noexcept boundary. A bad
                 // application callback must not terminate the platform pump.
+            }
+        }
+
+        void OnPlatformRedrawRequested(
+            WindowId id) noexcept override
+        {
+            if (!presenter)
+            {
+                return;
+            }
+
+            try
+            {
+                FlushPendingConfiguration(id);
+                const auto record = FindRecord(id);
+                if (!record)
+                {
+                    return;
+                }
+
+                FramebufferSize framebufferSize;
+                {
+                    std::scoped_lock lock(record->mutex);
+                    if (record->lifecycle !=
+                            WindowLifecycleState::Open ||
+                        !record->configuration.visible)
+                    {
+                        return;
+                    }
+                    framebufferSize =
+                        record->configuration.geometry.framebufferSize;
+                }
+                (void)presenter->RedrawWindow(id, framebufferSize);
+            }
+            catch (...)
+            {
+                // Native redraw requests cannot escape the platform pump.
+            }
+        }
+
+        void OnPlatformPresentationTargetInvalidating(
+            WindowId id) noexcept override
+        {
+            if (presenter)
+            {
+                presenter->DetachWindow(id);
             }
         }
 
@@ -1536,6 +1616,9 @@ namespace TGE::Internal
         std::atomic<bool> stopping { false };
         std::weak_ptr<DesktopEventRuntime> runtime;
         std::shared_ptr<IWindowPlatform> platform;
+        std::shared_ptr<IWindowPresentationTargetProvider>
+            presentationTargetProvider;
+        std::shared_ptr<IWindowPresenter> presenter;
     };
 
     struct WindowManager::State::WindowFacade final : IWindow
@@ -1908,54 +1991,158 @@ namespace TGE::Internal
             return std::unexpected(std::move(platformResult.error()));
         }
 
-        auto record = std::make_shared<Record>();
-        record->id = id;
-        record->requested = descriptor;
-        record->configuration =
-            std::move(platformResult->configuration);
-        record->capabilities = platformResult->capabilities;
-        record->requestedInputEnabled = descriptor.acceptsInput;
-
-        // Application modality can be implemented by the facade whenever the
-        // backend supports explicit input control.
-        record->capabilities.applicationModality =
-            record->capabilities.applicationModality ||
-            record->capabilities.inputControl;
-        if (descriptor.modality != WindowModality::Modeless &&
-            (record->capabilities.inputControl ||
-             (descriptor.modality ==
-                  WindowModality::ApplicationModal &&
-              record->capabilities.applicationModality)))
+        bool published = false;
+        const auto rollbackUnpublished = [this, id]() noexcept
         {
-            record->configuration.modality =
-                descriptor.modality;
-        }
+            {
+                std::scoped_lock lock(mutex);
+                windows.erase(id);
+                std::erase(order, id);
+            }
 
-        auto facade = std::make_shared<WindowFacade>(
-            weak_from_this(),
-            record);
+            try
+            {
+                const auto destroyed = platform->DestroyWindow(id);
+                if (!destroyed && presenter)
+                {
+                    presenter->DetachWindow(id);
+                }
+            }
+            catch (...)
+            {
+                if (presenter)
+                {
+                    presenter->DetachWindow(id);
+                }
+            }
+        };
 
+        try
         {
-            std::scoped_lock lock(mutex);
-            windows.emplace(
-                id,
-                ManagedWindow {
-                    .record = record,
-                    .facade = facade
-                });
-            order.emplace_back(id);
-        }
+            if (presenter)
+            {
+                auto target =
+                    presentationTargetProvider->GetPresentationTarget(id);
+                if (!target)
+                {
+                    rollbackUnpublished();
+                    return std::unexpected(std::move(target.error()));
+                }
 
-        RefreshModalSuppressionForNewWindow(record);
-        return std::static_pointer_cast<IWindow>(std::move(facade));
+                auto attached = presenter->AttachWindow(
+                    id,
+                    *target,
+                    platformResult->configuration.geometry.framebufferSize);
+                if (!attached)
+                {
+                    rollbackUnpublished();
+                    return std::unexpected(std::move(attached.error()));
+                }
+
+                if (platformResult->configuration.visible)
+                {
+                    auto redrawn = presenter->RedrawWindow(
+                        id,
+                        platformResult->configuration.geometry.framebufferSize);
+                    if (!redrawn)
+                    {
+                        rollbackUnpublished();
+                        return std::unexpected(std::move(redrawn.error()));
+                    }
+                }
+            }
+
+            auto record = std::make_shared<Record>();
+            record->id = id;
+            record->requested = descriptor;
+            record->configuration =
+                std::move(platformResult->configuration);
+            record->capabilities = platformResult->capabilities;
+            record->requestedInputEnabled = descriptor.acceptsInput;
+
+            // Application modality can be implemented by the facade whenever
+            // the backend supports explicit input control.
+            record->capabilities.applicationModality =
+                record->capabilities.applicationModality ||
+                record->capabilities.inputControl;
+            if (descriptor.modality != WindowModality::Modeless &&
+                (record->capabilities.inputControl ||
+                 (descriptor.modality ==
+                      WindowModality::ApplicationModal &&
+                  record->capabilities.applicationModality)))
+            {
+                record->configuration.modality =
+                    descriptor.modality;
+            }
+
+            auto facade = std::make_shared<WindowFacade>(
+                weak_from_this(),
+                record);
+
+            {
+                std::scoped_lock lock(mutex);
+                windows.emplace(
+                    id,
+                    ManagedWindow {
+                        .record = record,
+                        .facade = facade
+                    });
+                order.emplace_back(id);
+            }
+            published = true;
+
+            RefreshModalSuppressionForNewWindow(record);
+            return std::static_pointer_cast<IWindow>(std::move(facade));
+        }
+        catch (...)
+        {
+            if (published)
+            {
+                try
+                {
+                    (void)DestroyWindowOnDispatcher(
+                        id,
+                        WindowCloseReason::ApplicationRequest,
+                        true);
+                }
+                catch (...)
+                {
+                    rollbackUnpublished();
+                }
+            }
+            else
+            {
+                rollbackUnpublished();
+            }
+
+            auto failure =
+                ExceptionResult("Configuring window presentation failed");
+            return std::unexpected(std::move(failure.error()));
+        }
+    }
+
+    WindowManager::WindowManager(
+        std::shared_ptr<DesktopEventRuntime> runtime,
+        std::unique_ptr<IWindowPlatform> platform,
+        std::unique_ptr<IWindowPresentationTargetProvider>
+            presentationTargetProvider,
+        std::unique_ptr<IWindowPresenter> presenter)
+        : state(State::Create(
+              std::move(runtime),
+              std::move(platform),
+              std::move(presentationTargetProvider),
+              std::move(presenter)))
+    {
     }
 
     WindowManager::WindowManager(
         std::shared_ptr<DesktopEventRuntime> runtime,
         std::unique_ptr<IWindowPlatform> platform)
-        : state(State::Create(
+        : WindowManager(
               std::move(runtime),
-              std::move(platform)))
+              std::move(platform),
+              {},
+              {})
     {
     }
 

@@ -9,6 +9,8 @@ namespace TGE::Internal
 {
     class DesktopEventRuntime;
     class IWindowPlatform;
+    class IWindowPresentationTargetProvider;
+    class IWindowPresenter;
 
     /**
      * @brief Thread-safe facade shared by every native window backend.
@@ -22,6 +24,12 @@ namespace TGE::Internal
         WindowManager(
             std::shared_ptr<DesktopEventRuntime> runtime,
             std::unique_ptr<IWindowPlatform> platform);
+        WindowManager(
+            std::shared_ptr<DesktopEventRuntime> runtime,
+            std::unique_ptr<IWindowPlatform> platform,
+            std::unique_ptr<IWindowPresentationTargetProvider>
+                presentationTargetProvider,
+            std::unique_ptr<IWindowPresenter> presenter);
         ~WindowManager() override;
 
         WindowManager(const WindowManager&) = delete;

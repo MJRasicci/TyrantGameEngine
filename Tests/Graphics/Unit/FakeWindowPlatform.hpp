@@ -183,10 +183,22 @@ namespace TGE::Tests
 
             {
                 std::scoped_lock lock(mutex);
-                if (windows.erase(id) == 0)
+                if (!windows.contains(id))
                 {
                     return DestroyedError();
                 }
+            }
+
+            {
+                std::scoped_lock sinkLock(sinkMutex);
+                if (sink)
+                {
+                    sink->OnPlatformPresentationTargetInvalidating(id);
+                }
+            }
+            {
+                std::scoped_lock lock(mutex);
+                windows.erase(id);
             }
             if (lifecycle)
             {
@@ -357,6 +369,7 @@ namespace TGE::Tests
                 return WindowOperationStatus::Cancelled;
             }
 
+            sink->OnPlatformPresentationTargetInvalidating(id);
             {
                 std::scoped_lock lock(mutex);
                 windows.erase(id);
@@ -406,6 +419,14 @@ namespace TGE::Tests
                 });
         }
 
+        void QueueRedraw(WindowId id)
+        {
+            QueueEvent(QueuedEvent {
+                    .type = EventType::Redraw,
+                    .id = id
+                });
+        }
+
         [[nodiscard]] std::optional<WindowConfiguration> Configuration(
             WindowId id) const
         {
@@ -448,6 +469,7 @@ namespace TGE::Tests
         enum class EventType
         {
             Configuration,
+            Redraw,
             CloseRequest
         };
 
@@ -577,6 +599,11 @@ namespace TGE::Tests
                     std::move(event.configuration));
                 return;
             }
+            if (event.type == EventType::Redraw)
+            {
+                sink->OnPlatformRedrawRequested(event.id);
+                return;
+            }
 
             if (!sink->OnPlatformCloseRequested(
                     event.id,
@@ -585,6 +612,7 @@ namespace TGE::Tests
                 return;
             }
 
+            sink->OnPlatformPresentationTargetInvalidating(event.id);
             {
                 std::scoped_lock lock(mutex);
                 windows.erase(event.id);

@@ -98,6 +98,12 @@ if(NOT "@CMAKE_BUILD_TYPE@" STREQUAL "")
         _tge_configure_command
         "-DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@")
 endif()
+if(@TGE_REQUIRES_VULKAN@)
+    list(APPEND
+        _tge_configure_command
+        "-DVulkan_INCLUDE_DIR=@Vulkan_INCLUDE_DIR@"
+        "-DVulkan_LIBRARY=@Vulkan_LIBRARY@")
+endif()
 if(NOT "@CMAKE_TOOLCHAIN_FILE@" STREQUAL "")
     list(APPEND
         _tge_configure_command

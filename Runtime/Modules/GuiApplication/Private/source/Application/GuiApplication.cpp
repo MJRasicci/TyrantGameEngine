@@ -29,6 +29,9 @@
 #if TGE_HAS_SDL_DESKTOP_BACKEND
 #include "Internal/SDLDesktop/SDLDesktopFactory.hpp"
 #endif
+#if TGE_HAS_VULKAN_PRESENTATION
+#include "Internal/VulkanPresentation/VulkanWindowPresenterFactory.hpp"
+#endif
 
 namespace TGE::detail
 {
@@ -365,10 +368,19 @@ namespace TGE
         auto runtime =
             std::make_shared<Internal::DesktopEventRuntime>(
                 std::move(components.eventPump));
+#if TGE_HAS_VULKAN_PRESENTATION
+        auto windowManager =
+            std::make_shared<Internal::WindowManager>(
+                runtime,
+                std::move(components.windowPlatform),
+                std::move(components.presentationTargetProvider),
+                Internal::CreateVulkanWindowPresenter());
+#else
         auto windowManager =
             std::make_shared<Internal::WindowManager>(
                 runtime,
                 std::move(components.windowPlatform));
+#endif
         auto inputManager =
             std::make_shared<Internal::InputManager>(
                 runtime,

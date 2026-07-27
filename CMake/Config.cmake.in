@@ -3,6 +3,10 @@
 include(CMakeFindDependencyMacro)
 find_dependency(Threads)
 
+if(@TGE_REQUIRES_VULKAN@)
+    find_dependency(Vulkan)
+endif()
+
 if(@TGE_INSTALLS_SDL3@ AND NOT TARGET TGE::SDL3)
     if(WIN32)
         find_library(

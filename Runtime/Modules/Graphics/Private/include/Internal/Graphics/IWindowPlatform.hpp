@@ -39,6 +39,22 @@ namespace TGE::Internal
             WindowId id,
             WindowConfiguration configuration) noexcept = 0;
         /**
+         * @brief Ask the renderer to commit another frame for a native window.
+         */
+        virtual void OnPlatformRedrawRequested(
+            WindowId id) noexcept
+        {
+            (void)id;
+        }
+        /**
+         * @brief Release presentation state before native handles are invalid.
+         */
+        virtual void OnPlatformPresentationTargetInvalidating(
+            WindowId id) noexcept
+        {
+            (void)id;
+        }
+        /**
          * @brief Run close-request policy and report whether closing may proceed.
          *
          * Native backends call this before accepting an operating-system close

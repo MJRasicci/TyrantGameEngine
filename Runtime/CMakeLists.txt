@@ -45,6 +45,36 @@ target_include_directories(
     INTERFACE
         "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Modules/Graphics/Private/include>")
 
+set(TGE_HAS_VULKAN_PRESENTATION FALSE)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND TGE_MODULE_SDLDESKTOP)
+    TGE_MODULE(
+        VulkanPresentation
+        INTERNAL_ONLY
+        DEPS Graphics)
+    if(TGE_MODULE_VULKANPRESENTATION)
+        set(TGE_HAS_VULKAN_PRESENTATION TRUE)
+        find_package(Vulkan REQUIRED)
+        target_link_libraries(
+            tge_VulkanPresentation_obj
+            PRIVATE
+                TGE::graphics_platform_spi
+                Vulkan::Vulkan)
+        add_library(tge_vulkan_presentation_spi INTERFACE)
+        add_library(
+            TGE::vulkan_presentation_spi
+            ALIAS tge_vulkan_presentation_spi)
+        target_link_libraries(
+            tge_vulkan_presentation_spi
+            INTERFACE
+                TGE::VulkanPresentation_obj
+                TGE::graphics_platform_spi)
+        target_include_directories(
+            tge_vulkan_presentation_spi
+            INTERFACE
+                "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Modules/VulkanPresentation/Private/include>")
+    endif()
+endif()
+
 TGE_MODULE(Input REQUIRED DEPS Core DesktopEventRuntime)
 target_link_libraries(
     tge_Input_obj
@@ -115,6 +145,18 @@ else()
         tge_GuiApplication_obj
         PRIVATE TGE_HAS_SDL_DESKTOP_BACKEND=0)
 endif()
+if(TGE_HAS_VULKAN_PRESENTATION)
+    target_link_libraries(
+        tge_GuiApplication_obj
+        PRIVATE TGE::vulkan_presentation_spi)
+    target_compile_definitions(
+        tge_GuiApplication_obj
+        PRIVATE TGE_HAS_VULKAN_PRESENTATION=1)
+else()
+    target_compile_definitions(
+        tge_GuiApplication_obj
+        PRIVATE TGE_HAS_VULKAN_PRESENTATION=0)
+endif()
 
 # In future:
 # TGE_MODULE(Assets   DEPS Core)
@@ -183,6 +225,23 @@ if(TGE_MODULE_SDLDESKTOP)
             TARGET ${_tge_runtime_target}
             PROPERTY INSTALL_RPATH "$ORIGIN")
     endif()
+endif()
+if(TGE_HAS_VULKAN_PRESENTATION)
+    if(TGE_BUILD_SHARED)
+        target_link_libraries(
+            ${_tge_runtime_target}
+            PRIVATE Vulkan::Vulkan)
+        set(TGE_REQUIRES_VULKAN FALSE PARENT_SCOPE)
+    else()
+        target_link_libraries(
+            ${_tge_runtime_target}
+            PUBLIC
+                "$<BUILD_INTERFACE:Vulkan::Vulkan>"
+                "$<INSTALL_INTERFACE:Vulkan::Vulkan>")
+        set(TGE_REQUIRES_VULKAN TRUE PARENT_SCOPE)
+    endif()
+else()
+    set(TGE_REQUIRES_VULKAN FALSE PARENT_SCOPE)
 endif()
 target_include_directories(
     ${_tge_runtime_target}

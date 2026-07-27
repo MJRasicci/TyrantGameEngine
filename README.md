@@ -17,6 +17,7 @@ Tyrant Game Engine (TGE) is a modular, data-driven runtime focused on rapid iter
   - [Asynchronous execution backend](#asynchronous-execution-backend)
   - [Typed options serialization](#typed-options-serialization)
   - [SDL desktop backend](#sdl-desktop-backend)
+  - [Linux Vulkan presentation](#linux-vulkan-presentation)
   - [Running Tests and Benchmarks](#running-tests-and-benchmarks)
   - [Packaging](#packaging)
   - [Workflow Shortcuts](#workflow-shortcuts)
@@ -66,6 +67,12 @@ The script auto-detects Debian/Ubuntu (APT), Fedora/RHEL (DNF), Arch/Manjaro (Pa
 - `-y/--yes` skips the confirmation prompt before installing packages.
 - `-r/--required` restricts installs to the minimal build toolchain.
 - `-v/--verbose` surfaces package-manager output for troubleshooting.
+
+On Fedora, the required dependency set also installs `libdecor-devel` so SDL's
+Wayland backend includes client-side title-bar and resize interactions.
+The required Linux sets include each distribution's Vulkan loader development
+package. A compatible vendor or Mesa Vulkan driver remains a host runtime
+requirement.
 
 #### macOS
 
@@ -224,6 +231,24 @@ Installed static and shared runtimes include the required SDL shared artifact
 and license notice. See the [Input architecture](Docs/Pages/Input.md) and
 [windowing backend architecture](Docs/Pages/WindowingBackends.md) for the
 public ownership, threading, capability, and rendering boundaries.
+
+### Linux Vulkan presentation
+
+Linux desktop builds enable the private `VulkanPresentation` module by default.
+It owns the Vulkan objects needed to clear and present each SDL-created Wayland
+surface, including the first buffer required for the compositor to map a
+window. SDL still owns only native window mechanics and event translation; it
+does not create Vulkan surfaces or control rendering.
+
+The module can be disabled for window and input lifecycle builds:
+
+```bash
+cmake --preset linux-x64-debug -DTGE_MODULE_VULKANPRESENTATION=OFF
+```
+
+A Vulkan loader development package is required to build the module. At
+runtime, the host must provide a compatible vendor or Mesa Vulkan driver with
+Wayland presentation support.
 
 ### Running Tests and Benchmarks
 

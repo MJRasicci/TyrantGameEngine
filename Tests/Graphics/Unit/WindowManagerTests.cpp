@@ -3,9 +3,11 @@
 #include <barrier>
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -18,6 +20,8 @@
 
 #include "FakeWindowPlatform.hpp"
 #include "Internal/Desktop/DesktopEventRuntime.hpp"
+#include "Internal/Graphics/IWindowPresentationTargetProvider.hpp"
+#include "Internal/Graphics/IWindowPresenter.hpp"
 #include "Internal/Graphics/WindowManager.hpp"
 #include "TGE/Execution/Task.hpp"
 #include "TGE/Graphics.hpp"
@@ -49,6 +53,238 @@ namespace
         }
         return std::move(*result);
     }
+
+    class FakeWindowPresentationTargetProvider final
+        : public TGE::Internal::IWindowPresentationTargetProvider
+    {
+    public:
+        FakeWindowPresentationTargetProvider()
+            : target(
+                  TGE::Internal::WaylandWindowPresentationTarget {
+                      .display = &displayToken,
+                      .surface = &surfaceToken
+                  })
+        {
+        }
+
+        TGE::Internal::WindowPresentationTargetResult
+            GetPresentationTarget(TGE::WindowId id) override
+        {
+            std::scoped_lock lock(mutex);
+            requestedWindows.emplace_back(id);
+            if (throwNext)
+            {
+                throwNext = false;
+                throw std::runtime_error(
+                    "Injected target provider exception");
+            }
+            if (nextFailure)
+            {
+                auto failure = std::move(*nextFailure);
+                nextFailure.reset();
+                return std::unexpected(std::move(failure));
+            }
+            return target;
+        }
+
+        void FailNext(TGE::WindowError error)
+        {
+            std::scoped_lock lock(mutex);
+            nextFailure = std::move(error);
+        }
+
+        void ThrowNext()
+        {
+            std::scoped_lock lock(mutex);
+            throwNext = true;
+        }
+
+        [[nodiscard]] std::vector<TGE::WindowId>
+            RequestedWindows() const
+        {
+            std::scoped_lock lock(mutex);
+            return requestedWindows;
+        }
+
+    private:
+        mutable std::mutex mutex;
+        int displayToken { 0 };
+        int surfaceToken { 0 };
+        TGE::Internal::WindowPresentationTarget target;
+        std::optional<TGE::WindowError> nextFailure;
+        std::vector<TGE::WindowId> requestedWindows;
+        bool throwNext { false };
+    };
+
+    enum class PresentationCallKind
+    {
+        Attach,
+        Redraw,
+        Detach,
+        Shutdown
+    };
+
+    class FakeWindowPresenter final : public TGE::Internal::IWindowPresenter
+    {
+    public:
+        struct Attachment
+        {
+            TGE::WindowId id;
+            TGE::Internal::WindowPresentationTarget target;
+            TGE::FramebufferSize framebufferSize;
+        };
+
+        struct Redraw
+        {
+            TGE::WindowId id;
+            TGE::FramebufferSize framebufferSize;
+        };
+
+        TGE::Internal::WindowPresentationResult AttachWindow(
+            TGE::WindowId id,
+            const TGE::Internal::WindowPresentationTarget& target,
+            TGE::FramebufferSize framebufferSize) override
+        {
+            std::scoped_lock lock(mutex);
+            calls.emplace_back(PresentationCallKind::Attach);
+            attachments.emplace_back(Attachment {
+                .id = id,
+                .target = target,
+                .framebufferSize = framebufferSize
+            });
+            if (nextAttachFailure)
+            {
+                auto failure = std::move(*nextAttachFailure);
+                nextAttachFailure.reset();
+                return std::unexpected(std::move(failure));
+            }
+            return {};
+        }
+
+        TGE::Internal::WindowPresentationResult RedrawWindow(
+            TGE::WindowId id,
+            TGE::FramebufferSize framebufferSize) override
+        {
+            std::optional<TGE::WindowError> failure;
+            {
+                std::scoped_lock lock(mutex);
+                calls.emplace_back(PresentationCallKind::Redraw);
+                redraws.emplace_back(Redraw {
+                    .id = id,
+                    .framebufferSize = framebufferSize
+                });
+                if (throwNextRedraw)
+                {
+                    throwNextRedraw = false;
+                    throw std::runtime_error(
+                        "Injected redraw exception");
+                }
+                failure = std::move(nextRedrawFailure);
+                nextRedrawFailure.reset();
+            }
+            changed.notify_all();
+            if (failure)
+            {
+                return std::unexpected(std::move(*failure));
+            }
+            return {};
+        }
+
+        void DetachWindow(TGE::WindowId id) noexcept override
+        {
+            std::function<void(TGE::WindowId)> observer;
+            {
+                std::scoped_lock lock(mutex);
+                calls.emplace_back(PresentationCallKind::Detach);
+                detachedWindows.emplace_back(id);
+                observer = detachObserver;
+            }
+            if (observer)
+            {
+                observer(id);
+            }
+        }
+
+        void Shutdown() noexcept override
+        {
+            std::scoped_lock lock(mutex);
+            calls.emplace_back(PresentationCallKind::Shutdown);
+        }
+
+        void FailNextAttach(TGE::WindowError error)
+        {
+            std::scoped_lock lock(mutex);
+            nextAttachFailure = std::move(error);
+        }
+
+        void FailNextRedraw(TGE::WindowError error)
+        {
+            std::scoped_lock lock(mutex);
+            nextRedrawFailure = std::move(error);
+        }
+
+        void ThrowNextRedraw()
+        {
+            std::scoped_lock lock(mutex);
+            throwNextRedraw = true;
+        }
+
+        void SetDetachObserver(
+            std::function<void(TGE::WindowId)> observer)
+        {
+            std::scoped_lock lock(mutex);
+            detachObserver = std::move(observer);
+        }
+
+        [[nodiscard]] bool WaitForRedrawCount(std::size_t count)
+        {
+            std::unique_lock lock(mutex);
+            return changed.wait_for(
+                lock,
+                std::chrono::seconds(2),
+                [this, count]
+                {
+                    return redraws.size() >= count;
+                });
+        }
+
+        [[nodiscard]] std::vector<Attachment> Attachments() const
+        {
+            std::scoped_lock lock(mutex);
+            return attachments;
+        }
+
+        [[nodiscard]] std::vector<Redraw> Redraws() const
+        {
+            std::scoped_lock lock(mutex);
+            return redraws;
+        }
+
+        [[nodiscard]] std::vector<TGE::WindowId>
+            DetachedWindows() const
+        {
+            std::scoped_lock lock(mutex);
+            return detachedWindows;
+        }
+
+        [[nodiscard]] std::vector<PresentationCallKind> Calls() const
+        {
+            std::scoped_lock lock(mutex);
+            return calls;
+        }
+
+    private:
+        mutable std::mutex mutex;
+        std::condition_variable changed;
+        std::vector<PresentationCallKind> calls;
+        std::vector<Attachment> attachments;
+        std::vector<Redraw> redraws;
+        std::vector<TGE::WindowId> detachedWindows;
+        std::optional<TGE::WindowError> nextAttachFailure;
+        std::optional<TGE::WindowError> nextRedrawFailure;
+        std::function<void(TGE::WindowId)> detachObserver;
+        bool throwNextRedraw { false };
+    };
 
     class BlockingWindowPlatformSink final
         : public TGE::Internal::IWindowPlatformEventSink
@@ -207,6 +443,423 @@ namespace
         std::unique_ptr<TGE::Internal::WindowManager> manager;
         std::jthread runner;
     };
+
+    TEST(
+        WindowPresentationContract,
+        TargetProviderAndPresenterMustBeConfiguredTogether)
+    {
+        auto eventPump =
+            std::make_unique<TGE::Tests::FakeDesktopEventPump>();
+        auto* pump = eventPump.get();
+        auto runtime =
+            std::make_shared<TGE::Internal::DesktopEventRuntime>(
+                std::move(eventPump));
+
+        EXPECT_THROW(
+            {
+                auto manager =
+                    std::make_unique<TGE::Internal::WindowManager>(
+                        runtime,
+                        std::make_unique<
+                            TGE::Tests::FakeWindowPlatform>(*pump),
+                        std::make_unique<
+                            FakeWindowPresentationTargetProvider>(),
+                        std::unique_ptr<
+                            TGE::Internal::IWindowPresenter> {});
+            },
+            std::invalid_argument);
+
+        EXPECT_THROW(
+            {
+                auto manager =
+                    std::make_unique<TGE::Internal::WindowManager>(
+                        runtime,
+                        std::make_unique<
+                            TGE::Tests::FakeWindowPlatform>(*pump),
+                        std::unique_ptr<
+                            TGE::Internal::IWindowPresentationTargetProvider> {},
+                        std::make_unique<FakeWindowPresenter>());
+            },
+            std::invalid_argument);
+    }
+
+    struct PresentationManagerFixture : testing::Test
+    {
+        void SetUp() override
+        {
+            auto eventPump =
+                std::make_unique<TGE::Tests::FakeDesktopEventPump>();
+            pump = eventPump.get();
+            runtime =
+                std::make_shared<TGE::Internal::DesktopEventRuntime>(
+                    std::move(eventPump));
+
+            auto platform =
+                std::make_unique<TGE::Tests::FakeWindowPlatform>(*pump);
+            fake = platform.get();
+            auto targetProvider =
+                std::make_unique<
+                    FakeWindowPresentationTargetProvider>();
+            provider = targetProvider.get();
+            auto windowPresenter =
+                std::make_unique<FakeWindowPresenter>();
+            presenter = windowPresenter.get();
+            manager =
+                std::make_unique<TGE::Internal::WindowManager>(
+                    runtime,
+                    std::move(platform),
+                    std::move(targetProvider),
+                    std::move(windowPresenter));
+
+            runner = std::jthread(
+                [runtime = runtime](std::stop_token stopping)
+                {
+                    (void)runtime->Run(stopping);
+                });
+            ASSERT_TRUE(pump->WaitUntilStarted());
+        }
+
+        void TearDown() override
+        {
+            manager.reset();
+            runtime->RequestStop();
+            runner.join();
+            runtime.reset();
+        }
+
+        TGE::Tests::FakeDesktopEventPump* pump { nullptr };
+        TGE::Tests::FakeWindowPlatform* fake { nullptr };
+        FakeWindowPresentationTargetProvider* provider { nullptr };
+        FakeWindowPresenter* presenter { nullptr };
+        std::shared_ptr<TGE::Internal::DesktopEventRuntime> runtime;
+        std::unique_ptr<TGE::Internal::WindowManager> manager;
+        std::jthread runner;
+    };
+
+    TEST_F(
+        PresentationManagerFixture,
+        VisibleCreationAttachesTargetThenDrawsInitialFrame)
+    {
+        fake->initialScale = { 1.5F, 2.0F };
+        const auto window = Create(
+            *manager,
+            TGE::WindowDescriptor {
+                .title = "Presented",
+                .bounds = {
+                    .position = {},
+                    .size = { 640.0F, 360.0F }
+                }
+            });
+
+        const auto attachments = presenter->Attachments();
+        ASSERT_EQ(attachments.size(), 1U);
+        EXPECT_EQ(attachments.front().id, window->Id());
+        EXPECT_EQ(
+            attachments.front().framebufferSize,
+            (TGE::FramebufferSize { 960, 720 }));
+        EXPECT_TRUE(std::holds_alternative<
+            TGE::Internal::WaylandWindowPresentationTarget>(
+                attachments.front().target));
+
+        const auto redraws = presenter->Redraws();
+        ASSERT_EQ(redraws.size(), 1U);
+        EXPECT_EQ(redraws.front().id, window->Id());
+        EXPECT_EQ(
+            redraws.front().framebufferSize,
+            attachments.front().framebufferSize);
+        EXPECT_EQ(
+            presenter->Calls(),
+            (std::vector<PresentationCallKind> {
+                PresentationCallKind::Attach,
+                PresentationCallKind::Redraw
+            }));
+    }
+
+    TEST_F(
+        PresentationManagerFixture,
+        HiddenCreationAttachesTargetWithoutDrawing)
+    {
+        const auto window = Create(
+            *manager,
+            TGE::WindowDescriptor {
+                .title = "Hidden",
+                .initiallyVisible = false
+            });
+
+        const auto attachments = presenter->Attachments();
+        ASSERT_EQ(attachments.size(), 1U);
+        EXPECT_EQ(attachments.front().id, window->Id());
+        EXPECT_TRUE(presenter->Redraws().empty());
+        EXPECT_EQ(
+            presenter->Calls(),
+            (std::vector<PresentationCallKind> {
+                PresentationCallKind::Attach
+            }));
+    }
+
+    TEST_F(
+        PresentationManagerFixture,
+        PlatformRedrawUsesLatestFramebufferSize)
+    {
+        const auto window = Create(
+            *manager,
+            TGE::WindowDescriptor {
+                .title = "Resizable",
+                .initiallyVisible = false
+            });
+        ASSERT_TRUE(Wait(window->ShowAsync()));
+        auto configuration = window->EffectiveConfiguration();
+        configuration.geometry.logicalBounds.size = {
+            1024.0F,
+            512.0F
+        };
+        configuration.geometry.framebufferSize = { 2048, 1024 };
+        configuration.geometry.scale = { 2.0F, 2.0F };
+
+        fake->QueueConfiguration(window->Id(), configuration);
+        fake->QueueRedraw(window->Id());
+
+        ASSERT_TRUE(presenter->WaitForRedrawCount(1));
+        const auto redraws = presenter->Redraws();
+        ASSERT_EQ(redraws.size(), 1U);
+        EXPECT_EQ(redraws.front().id, window->Id());
+        EXPECT_EQ(
+            redraws.front().framebufferSize,
+            configuration.geometry.framebufferSize);
+        EXPECT_EQ(
+            window->Geometry(),
+            configuration.geometry);
+    }
+
+    TEST_F(
+        PresentationManagerFixture,
+        HiddenWindowIgnoresStalePlatformRedraw)
+    {
+        const auto window = Create(
+            *manager,
+            TGE::WindowDescriptor {
+                .title = "Hidden redraw",
+                .initiallyVisible = false
+            });
+
+        std::promise<void> eventsDrained;
+        auto drained = eventsDrained.get_future();
+        fake->QueueRedraw(window->Id());
+        pump->Queue(
+            [&eventsDrained]
+            {
+                eventsDrained.set_value();
+            });
+
+        ASSERT_EQ(
+            drained.wait_for(std::chrono::seconds(2)),
+            std::future_status::ready);
+        EXPECT_TRUE(presenter->Redraws().empty());
+        EXPECT_EQ(
+            presenter->Calls(),
+            (std::vector<PresentationCallKind> {
+                PresentationCallKind::Attach
+            }));
+    }
+
+    TEST_F(
+        PresentationManagerFixture,
+        ExplicitDestroyDetachesBeforeNativeWindowIsErased)
+    {
+        const auto window = Create(
+            *manager,
+            TGE::WindowDescriptor {
+                .title = "Disposable",
+                .initiallyVisible = false
+            });
+        std::atomic<bool> nativeAliveDuringDetach { false };
+        presenter->SetDetachObserver(
+            [this, &nativeAliveDuringDetach](TGE::WindowId id)
+            {
+                nativeAliveDuringDetach.store(
+                    fake->Configuration(id).has_value());
+            });
+
+        const auto destroyed =
+            Wait(manager->DestroyWindowAsync(window->Id()));
+
+        ASSERT_TRUE(destroyed);
+        EXPECT_TRUE(nativeAliveDuringDetach.load());
+        EXPECT_EQ(
+            presenter->DetachedWindows(),
+            (std::vector<TGE::WindowId> { window->Id() }));
+        EXPECT_FALSE(fake->Configuration(window->Id()));
+        EXPECT_EQ(
+            window->LifecycleState(),
+            TGE::WindowLifecycleState::Destroyed);
+        EXPECT_EQ(
+            presenter->Calls(),
+            (std::vector<PresentationCallKind> {
+                PresentationCallKind::Attach,
+                PresentationCallKind::Detach
+            }));
+    }
+
+    TEST_F(
+        PresentationManagerFixture,
+        TargetProviderFailureRollsBackNativeWindow)
+    {
+        provider->FailNext(TGE::WindowError {
+            .code = TGE::WindowErrorCode::PlatformFailure,
+            .message = "Injected target failure"
+        });
+
+        const auto created = Wait(manager->CreateWindowAsync(
+            TGE::WindowDescriptor {
+                .title = "No target",
+                .initiallyVisible = false
+            }));
+
+        ASSERT_FALSE(created);
+        EXPECT_EQ(
+            created.error().code,
+            TGE::WindowErrorCode::PlatformFailure);
+        const auto requested = provider->RequestedWindows();
+        ASSERT_EQ(requested.size(), 1U);
+        EXPECT_FALSE(fake->Configuration(requested.front()));
+        EXPECT_TRUE(presenter->Attachments().empty());
+        EXPECT_EQ(
+            presenter->DetachedWindows(),
+            (std::vector<TGE::WindowId> { requested.front() }));
+        EXPECT_TRUE(manager->Windows().empty());
+    }
+
+    TEST_F(
+        PresentationManagerFixture,
+        PresenterAttachFailureRollsBackNativeWindow)
+    {
+        presenter->FailNextAttach(TGE::WindowError {
+            .code = TGE::WindowErrorCode::PlatformFailure,
+            .message = "Injected presenter failure"
+        });
+
+        const auto created = Wait(manager->CreateWindowAsync(
+            TGE::WindowDescriptor {
+                .title = "No presenter",
+                .initiallyVisible = false
+            }));
+
+        ASSERT_FALSE(created);
+        EXPECT_EQ(
+            created.error().code,
+            TGE::WindowErrorCode::PlatformFailure);
+        const auto attachments = presenter->Attachments();
+        ASSERT_EQ(attachments.size(), 1U);
+        EXPECT_FALSE(fake->Configuration(attachments.front().id));
+        EXPECT_EQ(
+            presenter->DetachedWindows(),
+            (std::vector<TGE::WindowId> {
+                attachments.front().id
+            }));
+        EXPECT_EQ(
+            presenter->Calls(),
+            (std::vector<PresentationCallKind> {
+                PresentationCallKind::Attach,
+                PresentationCallKind::Detach
+            }));
+        EXPECT_TRUE(manager->Windows().empty());
+    }
+
+    TEST_F(
+        PresentationManagerFixture,
+        InitialRedrawFailureRollsBackNativeWindow)
+    {
+        presenter->FailNextRedraw(TGE::WindowError {
+            .code = TGE::WindowErrorCode::PlatformFailure,
+            .message = "Injected redraw failure"
+        });
+
+        const auto created = Wait(manager->CreateWindowAsync(
+            TGE::WindowDescriptor {
+                .title = "No first frame",
+                .initiallyVisible = true
+            }));
+
+        ASSERT_FALSE(created);
+        EXPECT_EQ(
+            created.error().code,
+            TGE::WindowErrorCode::PlatformFailure);
+        const auto attachments = presenter->Attachments();
+        ASSERT_EQ(attachments.size(), 1U);
+        EXPECT_FALSE(fake->Configuration(attachments.front().id));
+        EXPECT_EQ(
+            presenter->DetachedWindows(),
+            (std::vector<TGE::WindowId> {
+                attachments.front().id
+            }));
+        EXPECT_EQ(
+            presenter->Calls(),
+            (std::vector<PresentationCallKind> {
+                PresentationCallKind::Attach,
+                PresentationCallKind::Redraw,
+                PresentationCallKind::Detach
+            }));
+        EXPECT_TRUE(manager->Windows().empty());
+    }
+
+    TEST_F(
+        PresentationManagerFixture,
+        TargetProviderExceptionRollsBackNativeWindow)
+    {
+        provider->ThrowNext();
+
+        const auto created = Wait(manager->CreateWindowAsync(
+            TGE::WindowDescriptor {
+                .title = "Throwing target",
+                .initiallyVisible = false
+            }));
+
+        ASSERT_FALSE(created);
+        EXPECT_EQ(
+            created.error().code,
+            TGE::WindowErrorCode::PlatformFailure);
+        const auto requested = provider->RequestedWindows();
+        ASSERT_EQ(requested.size(), 1U);
+        EXPECT_FALSE(fake->Configuration(requested.front()));
+        EXPECT_EQ(
+            presenter->DetachedWindows(),
+            (std::vector<TGE::WindowId> { requested.front() }));
+        EXPECT_TRUE(manager->Windows().empty());
+    }
+
+    TEST_F(
+        PresentationManagerFixture,
+        InitialRedrawExceptionRollsBackNativeWindow)
+    {
+        presenter->ThrowNextRedraw();
+
+        const auto created = Wait(manager->CreateWindowAsync(
+            TGE::WindowDescriptor {
+                .title = "Throwing first frame",
+                .initiallyVisible = true
+            }));
+
+        ASSERT_FALSE(created);
+        EXPECT_EQ(
+            created.error().code,
+            TGE::WindowErrorCode::PlatformFailure);
+        const auto attachments = presenter->Attachments();
+        ASSERT_EQ(attachments.size(), 1U);
+        EXPECT_FALSE(fake->Configuration(attachments.front().id));
+        EXPECT_EQ(
+            presenter->DetachedWindows(),
+            (std::vector<TGE::WindowId> {
+                attachments.front().id
+            }));
+        EXPECT_EQ(
+            presenter->Calls(),
+            (std::vector<PresentationCallKind> {
+                PresentationCallKind::Attach,
+                PresentationCallKind::Redraw,
+                PresentationCallKind::Detach
+            }));
+        EXPECT_TRUE(manager->Windows().empty());
+    }
 
     TEST_F(
         ManagerFixture,

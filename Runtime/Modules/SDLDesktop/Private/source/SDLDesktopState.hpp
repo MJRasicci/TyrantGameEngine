@@ -14,6 +14,7 @@
 #include <SDL3/SDL.h>
 
 #include "Internal/Desktop/IDesktopEventPump.hpp"
+#include "Internal/Graphics/IWindowPresentationTargetProvider.hpp"
 #include "Internal/Graphics/IWindowPlatform.hpp"
 #include "Internal/Input/IInputPlatform.hpp"
 
@@ -63,6 +64,8 @@ namespace TGE::Internal
             WindowId id,
             bool enabled);
         [[nodiscard]] WindowOperationResult RequestClose(WindowId id);
+        [[nodiscard]] WindowPresentationTargetResult
+            GetPresentationTarget(WindowId id);
 
         void SetInputEventSink(
             IInputPlatformEventSink* sink) noexcept;
@@ -132,6 +135,7 @@ namespace TGE::Internal
             WindowId id,
             WindowCloseReason reason,
             bool notify) noexcept;
+        void InvalidatePresentationTarget(WindowId id) noexcept;
         void PrepareWindowRemoval(WindowId id) noexcept;
         void DetachChildren(WindowId parent) noexcept;
         void InvalidateRemovedInputTarget(WindowId window) noexcept;
@@ -220,5 +224,8 @@ namespace TGE::Internal
             std::shared_ptr<SDLDesktopState> state);
     [[nodiscard]] std::unique_ptr<IInputPlatform>
         CreateSDLInputPlatform(
+            std::shared_ptr<SDLDesktopState> state);
+    [[nodiscard]] std::unique_ptr<IWindowPresentationTargetProvider>
+        CreateSDLWindowPresentationTargetProvider(
             std::shared_ptr<SDLDesktopState> state);
 }

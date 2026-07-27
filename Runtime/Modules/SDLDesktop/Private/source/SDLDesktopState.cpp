@@ -358,6 +358,7 @@ namespace TGE::Internal
             {
                 continue;
             }
+            InvalidatePresentationTarget(id);
             PrepareWindowRemoval(id);
             auto* window = found->second.window;
             if (window != nullptr)
@@ -475,6 +476,14 @@ namespace TGE::Internal
             propertyId,
             SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN,
             true) && propertiesSet;
+        const auto* currentVideoDriver =
+            SDL_GetCurrentVideoDriver();
+        propertiesSet = SetBoolean(
+            propertyId,
+            SDL_PROP_WINDOW_CREATE_EXTERNAL_GRAPHICS_CONTEXT_BOOLEAN,
+            currentVideoDriver != nullptr &&
+                std::string_view(currentVideoDriver) == "wayland") &&
+            propertiesSet;
         propertiesSet = SetBoolean(
             propertyId,
             SDL_PROP_WINDOW_CREATE_UTILITY_BOOLEAN,
@@ -864,6 +873,65 @@ namespace TGE::Internal
         return WindowOperationStatus::Applied;
     }
 
+    WindowPresentationTargetResult
+        SDLDesktopState::GetPresentationTarget(WindowId id)
+    {
+        if (!started.load())
+        {
+            return std::unexpected(WindowError {
+                .code = WindowErrorCode::InvalidState,
+                .message =
+                    "The SDL desktop backend is not running."
+            });
+        }
+
+        auto* record = FindWindow(id);
+        if (record == nullptr)
+        {
+            return std::unexpected(MissingWindow(id));
+        }
+
+        const auto* driver = SDL_GetCurrentVideoDriver();
+        if (driver == nullptr ||
+            std::string_view(driver) != "wayland")
+        {
+            return WindowPresentationTarget {};
+        }
+
+        const auto properties =
+            SDL_GetWindowProperties(record->window);
+        if (properties == 0)
+        {
+            return std::unexpected(
+                WindowFailure("query Wayland window properties"));
+        }
+
+        auto* display = SDL_GetPointerProperty(
+            properties,
+            SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER,
+            nullptr);
+        auto* surface = SDL_GetPointerProperty(
+            properties,
+            SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER,
+            nullptr);
+        if (display == nullptr || surface == nullptr)
+        {
+            return std::unexpected(WindowError {
+                .code = WindowErrorCode::PlatformFailure,
+                .message =
+                    "SDL did not expose the Wayland display and surface "
+                    "required for native presentation."
+            });
+        }
+
+        return WindowPresentationTarget {
+            WaylandWindowPresentationTarget {
+                .display = display,
+                .surface = surface
+            }
+        };
+    }
+
     bool SDLDesktopState::DestroyNativeWindow(
         WindowId id,
         WindowCloseReason reason,
@@ -877,6 +945,7 @@ namespace TGE::Internal
                 return false;
             }
 
+            InvalidatePresentationTarget(id);
             PrepareWindowRemoval(id);
             DetachChildren(id);
             found = windows.find(id);
@@ -905,6 +974,23 @@ namespace TGE::Internal
         catch (...)
         {
             return false;
+        }
+    }
+
+    void SDLDesktopState::InvalidatePresentationTarget(
+        WindowId id) noexcept
+    {
+        try
+        {
+            std::scoped_lock sinkLock(windowSinkMutex);
+            if (auto* sink = windowSink)
+            {
+                sink->OnPlatformPresentationTargetInvalidating(id);
+            }
+        }
+        catch (...)
+        {
+            // Presentation cleanup must not escape native destruction.
         }
     }
 
@@ -1267,6 +1353,7 @@ namespace TGE::Internal
 
             case SDL_EVENT_WINDOW_SHOWN:
             case SDL_EVENT_WINDOW_HIDDEN:
+            case SDL_EVENT_WINDOW_EXPOSED:
             case SDL_EVENT_WINDOW_MOVED:
             case SDL_EVENT_WINDOW_RESIZED:
             case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
@@ -1347,6 +1434,16 @@ namespace TGE::Internal
                 sink->OnPlatformClosed(
                     id,
                     WindowCloseReason::PlatformRequest);
+            }
+            return;
+        }
+
+        if (event.type == SDL_EVENT_WINDOW_EXPOSED)
+        {
+            std::scoped_lock sinkLock(windowSinkMutex);
+            if (auto* sink = windowSink)
+            {
+                sink->OnPlatformRedrawRequested(id);
             }
             return;
         }

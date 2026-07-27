@@ -26,7 +26,8 @@ GuiApplication
   -> WindowManager + InputManager
   -> one externally driven DesktopEventRuntime
   -> private SDL window adapter + private SDL input adapter
-  -> SDL 3.4.12 shared library
+  -> private Linux Vulkan presenter
+  -> SDL 3.4.12 shared library + system Vulkan loader
 ```
 
 `SDLDesktop`, `DesktopEventRuntime`, and the Graphics and Input platform SPIs
@@ -132,12 +133,26 @@ The desktop backend is enabled by default and can be omitted at configure time:
 cmake --preset linux-x64-debug -DTGE_MODULE_SDLDESKTOP=OFF
 ```
 
+Linux desktop builds also enable the private `VulkanPresentation` module. It
+can be omitted independently when building window and input lifecycle code
+without native presentation:
+
+```bash
+cmake --preset linux-x64-debug -DTGE_MODULE_VULKANPRESENTATION=OFF
+```
+
 When enabled, configuration fetches the exact SDL 3.4.12 release archive and
 verifies its pinned SHA-256 digest. Tyrant builds only SDL's shared runtime;
 SDL tests, examples, documentation, and upstream install rules are disabled.
 Optional X11 extensions are disabled individually when their development
 packages are unavailable, without unnecessarily disabling the base X11
 backend.
+
+`VulkanPresentation` uses the system Vulkan loader and requires its development
+package at build time. The host must also provide a Vulkan implementation that
+supports Wayland surfaces, swapchains, and presentation fences. A static Tyrant
+package exposes the Vulkan loader as a transitive link dependency; a shared
+runtime resolves it privately.
 
 SDL remains a private implementation dependency, but its shared runtime is a
 deployment dependency for both static and shared Tyrant builds. Installation
@@ -164,10 +179,20 @@ The SDL desktop decision does not authorize use of:
 - direct SDL use outside the private `SDLDesktop` integration island.
 
 The build disables SDL GPU, renderer, Vulkan, OpenGL, OpenGL ES, and Metal
-integration to make the rendering boundary concrete. A future renderer-to-
-window bridge must use Tyrant window identity behind private contracts.
-Rendering continues to own devices, queues, contexts, surfaces, swapchains,
-synchronization, resources, pipelines, and commands.
+integration to make the rendering boundary concrete. The Linux
+`VulkanPresentation` bridge instead receives borrowed Wayland display and
+surface handles through a private contract keyed by Tyrant `WindowId`.
+Presentation owns its Vulkan instance, device, queues, surfaces, swapchains,
+synchronization, resources, and commands without exposing native handles
+through the public window API.
+
+Wayland does not map a window until the application presents its first buffer.
+The bootstrap Vulkan presenter clears and presents an initial frame before
+window creation succeeds, redraws the latest framebuffer size when SDL reports
+an expose event, and releases presentation state synchronously before SDL
+destroys the borrowed native surface. This makes the current Editor visible
+without assigning rendering ownership to SDL. A future full renderer can
+replace the clear-only presenter behind the same private contracts.
 
 Using SDL for another engine subsystem requires a separate architectural
 decision. The fact that window and input events share SDL's native queue does

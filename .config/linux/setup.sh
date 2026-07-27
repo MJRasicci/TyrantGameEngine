@@ -39,6 +39,8 @@ ${BOLD}Required dependencies:${RESET}
   * GCC / Clang toolchain with C++26 mode (via distro meta-packages)
   * ninja
   * cmake
+  * Vulkan loader development files (native presentation)
+  * libdecor development files on Fedora (Wayland window decorations)
 
 ${BOLD}Optional dependencies:${RESET}
   * Doxygen
@@ -161,23 +163,30 @@ fi
 # --------------------------- Dependency maps ---------------------------
 declare -A REQ_MAP OPT_MAP
 
-REQ_MAP[apt-get]="build-essential ninja-build cmake"
+REQ_MAP[apt-get]="build-essential ninja-build cmake libvulkan-dev"
 OPT_MAP[apt-get]="doxygen graphviz libgtest-dev libbenchmark-dev"
 
-REQ_MAP[dnf]="gcc gcc-c++ ninja-build cmake"
+REQ_MAP[dnf]="gcc gcc-c++ ninja-build cmake vulkan-loader-devel"
 OPT_MAP[dnf]="doxygen graphviz gtest-devel google-benchmark-devel"
 
-REQ_MAP[pacman]="base-devel ninja cmake"
+REQ_MAP[pacman]="base-devel ninja cmake vulkan-headers vulkan-icd-loader"
 OPT_MAP[pacman]="doxygen graphviz gtest benchmark"
 
-REQ_MAP[zypper]="gcc gcc-c++ ninja cmake"
+REQ_MAP[zypper]="gcc gcc-c++ ninja cmake vulkan-devel"
 OPT_MAP[zypper]="doxygen graphviz gtest benchmark-devel"
 
-REQ_MAP[apk]="build-base ninja cmake"
+REQ_MAP[apk]="build-base ninja cmake vulkan-loader-dev"
 OPT_MAP[apk]="doxygen graphviz gtest benchmark"
 
-REQ_MAP[emerge]="sys-devel/gcc dev-build/ninja dev-build/cmake"
+REQ_MAP[emerge]="sys-devel/gcc dev-build/ninja dev-build/cmake media-libs/vulkan-loader"
 OPT_MAP[emerge]="app-text/doxygen media-gfx/graphviz dev-cpp/gtest dev-cpp/benchmark"
+
+# SDL enables its Wayland libdecor integration only when the development
+# package is present while configuring. Keep this Fedora-specific because the
+# same package is not consistently available from other DNF-based systems.
+if [[ "$PM" == "dnf" && "${ID:-}" == "fedora" ]]; then
+  REQ_MAP[dnf]+=" libdecor-devel"
+fi
 
 # --------------------------- Version detection helpers ---------------------------
 pkg_version_apt() {
@@ -423,6 +432,9 @@ install_missing() {
     # Keep it idempotent: append only if not present
     if ! grep -q '^media-libs/gd ' /etc/portage/package.use/tge 2>/dev/null; then
       echo 'media-libs/gd fontconfig truetype' >> /etc/portage/package.use/tge
+    fi
+    if ! grep -q '^media-libs/vulkan-loader ' /etc/portage/package.use/tge 2>/dev/null; then
+      echo 'media-libs/vulkan-loader wayland' >> /etc/portage/package.use/tge
     fi
   fi
 

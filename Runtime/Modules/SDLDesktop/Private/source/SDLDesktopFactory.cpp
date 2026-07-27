@@ -10,6 +10,8 @@ namespace TGE::Internal
         return SDLDesktopComponents {
             .eventPump = CreateSDLDesktopEventPump(state),
             .windowPlatform = CreateSDLWindowPlatform(state),
+            .presentationTargetProvider =
+                CreateSDLWindowPresentationTargetProvider(state),
             .inputPlatform = CreateSDLInputPlatform(std::move(state))
         };
     }
