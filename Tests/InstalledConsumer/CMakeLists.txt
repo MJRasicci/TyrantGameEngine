@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.30)
 project(TGEInstalledConsumer LANGUAGES CXX)
 
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 find_package(TyrantGameEngine CONFIG REQUIRED)
 
 add_executable(tge_installed_consumer main.cpp)

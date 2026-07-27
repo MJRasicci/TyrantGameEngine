@@ -42,6 +42,11 @@ set(CMAKE_CXX_STANDARD ${TGE_CMAKE_CXX_STANDARD})
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# TGE does not use C++ named modules. Keep CMake from enabling compiler module
+# scanning implicitly, which can alter otherwise ordinary translation units and
+# currently triggers a GCC 16 ICE while validating the stdexec fallback.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 # Enable folders in IDEs to organize targets
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
