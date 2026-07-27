@@ -1,10 +1,15 @@
 #include <TGE/Core.hpp>
+#include <TGE/Graphics.hpp>
 
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <type_traits>
+
+static_assert(std::is_abstract_v<TGE::IWindow>);
+static_assert(std::is_abstract_v<TGE::IWindowManager>);
 
 namespace
 {
