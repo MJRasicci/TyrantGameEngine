@@ -9,8 +9,112 @@ cmake_minimum_required(VERSION 3.25)
 TGE_MODULE(Core REQUIRED)
 TGE_MODULE(Application REQUIRED DEPS Core)
 TGE_MODULE(CliApplication REQUIRED DEPS Application)
-TGE_MODULE(Graphics REQUIRED DEPS Core)
-TGE_MODULE(GuiApplication REQUIRED DEPS Application Graphics)
+
+# One externally driven desktop queue serializes private platform adapters.
+# Its headers are implementation contracts and never enter the installed API.
+TGE_MODULE(DesktopEventRuntime REQUIRED INTERNAL_ONLY DEPS Core)
+add_library(tge_desktop_event_runtime_spi INTERFACE)
+add_library(
+    TGE::desktop_event_runtime_spi
+    ALIAS tge_desktop_event_runtime_spi)
+target_link_libraries(
+    tge_desktop_event_runtime_spi
+    INTERFACE TGE::DesktopEventRuntime_obj)
+target_include_directories(
+    tge_desktop_event_runtime_spi
+    INTERFACE
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Modules/DesktopEventRuntime/Private/include>")
+
+TGE_MODULE(Graphics REQUIRED DEPS Core DesktopEventRuntime)
+target_link_libraries(
+    tge_Graphics_obj
+    PRIVATE TGE::desktop_event_runtime_spi)
+
+# Platform adapters consume Graphics implementation contracts through this
+# build-tree-only target. The SPI remains unavailable to installed consumers
+# and does not become part of Graphics' public API.
+add_library(tge_graphics_platform_spi INTERFACE)
+add_library(TGE::graphics_platform_spi ALIAS tge_graphics_platform_spi)
+target_link_libraries(
+    tge_graphics_platform_spi
+    INTERFACE
+        TGE::Graphics_obj
+        TGE::desktop_event_runtime_spi)
+target_include_directories(
+    tge_graphics_platform_spi
+    INTERFACE
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Modules/Graphics/Private/include>")
+
+TGE_MODULE(Input REQUIRED DEPS Core DesktopEventRuntime)
+target_link_libraries(
+    tge_Input_obj
+    PRIVATE TGE::desktop_event_runtime_spi)
+
+add_library(tge_input_platform_spi INTERFACE)
+add_library(TGE::input_platform_spi ALIAS tge_input_platform_spi)
+target_link_libraries(
+    tge_input_platform_spi
+    INTERFACE
+        TGE::Input_obj
+        TGE::desktop_event_runtime_spi)
+target_include_directories(
+    tge_input_platform_spi
+    INTERFACE
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Modules/Input/Private/include>")
+
+TGE_MODULE(
+    SDLDesktop
+    INTERNAL_ONLY
+    DEPS DesktopEventRuntime Graphics Input)
+if(TGE_MODULE_SDLDESKTOP)
+    include("${CMAKE_SOURCE_DIR}/CMake/SDL3.cmake")
+    TGE_FETCH_SDL3()
+
+    target_link_libraries(
+        tge_SDLDesktop_obj
+        PRIVATE
+            TGE::desktop_event_runtime_spi
+            TGE::graphics_platform_spi
+            TGE::input_platform_spi
+            ${TGE_SDL3_TARGET})
+
+    add_library(tge_sdl_desktop_spi INTERFACE)
+    add_library(TGE::sdl_desktop_spi ALIAS tge_sdl_desktop_spi)
+    target_link_libraries(
+        tge_sdl_desktop_spi
+        INTERFACE
+            TGE::SDLDesktop_obj
+            TGE::desktop_event_runtime_spi
+            TGE::graphics_platform_spi
+            TGE::input_platform_spi)
+    target_include_directories(
+        tge_sdl_desktop_spi
+        INTERFACE
+            "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Modules/SDLDesktop/Private/include>")
+endif()
+
+TGE_MODULE(
+    GuiApplication
+    REQUIRED
+    DEPS Application Graphics Input DesktopEventRuntime)
+target_link_libraries(
+    tge_GuiApplication_obj
+    PRIVATE
+        TGE::desktop_event_runtime_spi
+        TGE::graphics_platform_spi
+        TGE::input_platform_spi)
+if(TGE_MODULE_SDLDESKTOP)
+    target_link_libraries(
+        tge_GuiApplication_obj
+        PRIVATE TGE::sdl_desktop_spi)
+    target_compile_definitions(
+        tge_GuiApplication_obj
+        PRIVATE TGE_HAS_SDL_DESKTOP_BACKEND=1)
+else()
+    target_compile_definitions(
+        tge_GuiApplication_obj
+        PRIVATE TGE_HAS_SDL_DESKTOP_BACKEND=0)
+endif()
 
 # In future:
 # TGE_MODULE(Assets   DEPS Core)
@@ -53,6 +157,33 @@ else()
 endif()
 
 target_link_libraries(${_tge_runtime_target} PUBLIC TGE::build_options)
+if(TGE_MODULE_SDLDESKTOP)
+    if(TGE_BUILD_SHARED)
+        target_link_libraries(
+            ${_tge_runtime_target}
+            PRIVATE
+                "$<BUILD_INTERFACE:$<TARGET_LINKER_FILE:${TGE_SDL3_TARGET}>>")
+        add_dependencies(
+            ${_tge_runtime_target}
+            SDL3-shared)
+    else()
+        target_link_libraries(
+            ${_tge_runtime_target}
+            PUBLIC
+                "$<BUILD_INTERFACE:${TGE_SDL3_TARGET}>"
+                "$<INSTALL_INTERFACE:TGE::SDL3>")
+    endif()
+
+    if(APPLE)
+        set_property(
+            TARGET ${_tge_runtime_target}
+            PROPERTY INSTALL_RPATH "@loader_path")
+    elseif(UNIX)
+        set_property(
+            TARGET ${_tge_runtime_target}
+            PROPERTY INSTALL_RPATH "$ORIGIN")
+    endif()
+endif()
 target_include_directories(
     ${_tge_runtime_target}
     PUBLIC
@@ -101,6 +232,23 @@ if(TGE_STDEXEC_SOURCE_DIR)
         FILES "${TGE_STDEXEC_SOURCE_DIR}/LICENSE.txt"
         DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/TyrantGameEngine"
         RENAME stdexec-LICENSE.txt)
+endif()
+
+if(TGE_MODULE_SDLDESKTOP)
+    # SDL is a private implementation dependency, but its shared runtime and
+    # license must accompany both static and shared Tyrant distributions.
+    install(
+        TARGETS SDL3-shared
+        ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    install(
+        FILES "${TGE_SDL3_LICENSE_FILE}"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/TyrantGameEngine"
+        RENAME SDL3-LICENSE.txt)
+    set(TGE_INSTALLS_SDL3 TRUE PARENT_SCOPE)
+else()
+    set(TGE_INSTALLS_SDL3 FALSE PARENT_SCOPE)
 endif()
 
 # Options serialization is part of TGE's public template surface, so installed

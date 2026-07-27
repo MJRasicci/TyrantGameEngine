@@ -7,6 +7,7 @@
 
 namespace TGE::Internal
 {
+    class DesktopEventRuntime;
     class IWindowPlatform;
 
     /**
@@ -18,7 +19,9 @@ namespace TGE::Internal
     class TGE_API WindowManager final : public IWindowManager
     {
     public:
-        explicit WindowManager(std::unique_ptr<IWindowPlatform> platform);
+        WindowManager(
+            std::shared_ptr<DesktopEventRuntime> runtime,
+            std::unique_ptr<IWindowPlatform> platform);
         ~WindowManager() override;
 
         WindowManager(const WindowManager&) = delete;
@@ -32,6 +35,15 @@ namespace TGE::Internal
             Windows() const override;
         Task<WindowOperationResult> DestroyWindowAsync(
             WindowId id) override;
+
+        /**
+         * @brief Explicitly release platform state before the shared pump stops.
+         *
+         * Desktop composition owns this lifecycle boundary; IWindowManager
+         * deliberately remains an ordinary service rather than a hosted
+         * service. The operation is idempotent.
+         */
+        Task<void> ShutdownAsync();
 
     private:
         struct State;

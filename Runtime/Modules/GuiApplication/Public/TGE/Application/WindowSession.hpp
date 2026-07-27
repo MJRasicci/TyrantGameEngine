@@ -13,6 +13,8 @@
 namespace TGE
 {
     class ApplicationLifetime;
+    class IInputContext;
+    class IInputManager;
     class IWindow;
     class IWindowManager;
     class ServiceScope;
@@ -66,7 +68,9 @@ namespace TGE
             std::shared_ptr<IWindow> window,
             std::shared_ptr<ServiceScope> scope,
             WindowSessionOptions options = {},
-            std::shared_ptr<ApplicationLifetime> lifetime = {});
+            std::shared_ptr<ApplicationLifetime> lifetime = {},
+            std::shared_ptr<IInputManager> inputManager = {},
+            std::shared_ptr<IInputContext> inputContext = {});
 
         ~WindowSession();
 
@@ -76,6 +80,20 @@ namespace TGE
         WindowSession& operator=(WindowSession&&) = delete;
 
         [[nodiscard]] std::shared_ptr<IWindow> Window() const noexcept;
+        /**
+         * @brief Input routed to this window, or null when none was composed.
+         */
+        [[nodiscard]] std::shared_ptr<IInputContext> InputContext()
+            const noexcept;
+        /**
+         * @brief The associated scope while another owner still retains it.
+         *
+         * Inherited and external sessions do not keep their caller-owned scope
+         * alive. Window-owned sessions release their strong ownership when
+         * teardown begins so retaining a completed session cannot retain the
+         * root service provider. The result is null after the final external
+         * scope owner releases it.
+         */
         [[nodiscard]] std::shared_ptr<ServiceScope> Scope() const noexcept;
         [[nodiscard]] WindowScopePolicy ScopePolicy() const noexcept;
 
@@ -91,6 +109,7 @@ namespace TGE
         struct State;
 
         explicit WindowSession(std::shared_ptr<State> state);
+        static Task<void> EndTask(std::shared_ptr<State> state);
 
         std::shared_ptr<State> state;
     };

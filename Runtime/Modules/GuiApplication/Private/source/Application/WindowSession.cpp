@@ -13,6 +13,8 @@
 #include "TGE/Application/ApplicationLifetime.hpp"
 #include "TGE/Graphics/IWindow.hpp"
 #include "TGE/Graphics/IWindowManager.hpp"
+#include "TGE/Input/IInputContext.hpp"
+#include "TGE/Input/IInputManager.hpp"
 #include "TGE/Services/ServiceProvider.hpp"
 
 namespace
@@ -21,6 +23,13 @@ namespace
     {
         return error.code == TGE::WindowErrorCode::WindowDestroyed ||
                error.code == TGE::WindowErrorCode::ManagerStopped;
+    }
+
+    bool IsIdempotentInputError(const TGE::InputError& error) noexcept
+    {
+        return error.code == TGE::InputErrorCode::ContextDestroyed ||
+               error.code == TGE::InputErrorCode::ContextNotFound ||
+               error.code == TGE::InputErrorCode::ManagerStopped;
     }
 
     TGE::Task<void> DestroyWindowIfLive(
@@ -46,6 +55,36 @@ namespace
         {
             throw std::runtime_error(std::format(
                 "Failed to destroy window {} while ending its session scope: {}",
+                id.Value(),
+                result.error().message));
+        }
+    }
+
+    TGE::Task<void> DestroyInputContextIfLive(
+        std::weak_ptr<TGE::IInputManager> weakManager,
+        std::weak_ptr<TGE::IInputContext> weakContext,
+        TGE::InputContextId id)
+    {
+        auto context = weakContext.lock();
+        if (!context ||
+            context->LifecycleState() ==
+                TGE::InputContextLifecycleState::Destroyed)
+        {
+            co_return;
+        }
+
+        auto manager = weakManager.lock();
+        if (!manager)
+        {
+            co_return;
+        }
+
+        auto result = co_await manager->DestroyContextAsync(id);
+        if (!result && !IsIdempotentInputError(result.error()))
+        {
+            throw std::runtime_error(std::format(
+                "Failed to destroy input context {} while ending its "
+                "window session scope: {}",
                 id.Value(),
                 result.error().message));
         }
@@ -170,11 +209,21 @@ namespace TGE
     {
         std::shared_ptr<IWindowManager> manager;
         std::shared_ptr<IWindow> window;
-        std::shared_ptr<ServiceScope> scope;
+        std::shared_ptr<IInputManager> inputManager;
+        std::shared_ptr<IInputContext> inputContext;
+        std::weak_ptr<ServiceScope> scope;
+        mutable std::mutex scopeMutex;
+        std::shared_ptr<ServiceScope> ownedScope;
         WindowSessionOptions options;
         std::weak_ptr<ApplicationLifetime> lifetime;
         WindowSubscription closedSubscription;
         std::atomic<bool> scopeEndQueued { false };
+
+        std::shared_ptr<ServiceScope> ReleaseOwnedScope()
+        {
+            std::scoped_lock lock(scopeMutex);
+            return std::exchange(ownedScope, {});
+        }
 
         void OnClosed()
         {
@@ -182,8 +231,9 @@ namespace TGE
             {
                 if (!scopeEndQueued.exchange(true))
                 {
+                    auto endingScope = ReleaseOwnedScope();
                     GetScopeEndDispatcher().Post(
-                        scope,
+                        std::move(endingScope),
                         lifetime,
                         options.stopApplicationOnClose);
                 }
@@ -205,7 +255,9 @@ namespace TGE
         std::shared_ptr<IWindow> window,
         std::shared_ptr<ServiceScope> scope,
         WindowSessionOptions options,
-        std::shared_ptr<ApplicationLifetime> lifetime)
+        std::shared_ptr<ApplicationLifetime> lifetime,
+        std::shared_ptr<IInputManager> inputManager,
+        std::shared_ptr<IInputContext> inputContext)
     {
         if (!manager)
         {
@@ -227,18 +279,31 @@ namespace TGE
             throw std::invalid_argument(
                 "A root window session requires an application lifetime.");
         }
+        if (static_cast<bool>(inputManager) !=
+            static_cast<bool>(inputContext))
+        {
+            throw std::invalid_argument(
+                "A window session requires both an input manager and input "
+                "context when input is attached.");
+        }
 
         auto state = std::make_shared<State>();
         state->manager = std::move(manager);
         state->window = std::move(window);
-        state->scope = std::move(scope);
+        state->inputManager = std::move(inputManager);
+        state->inputContext = std::move(inputContext);
+        state->scope = scope;
+        if (options.scopePolicy == WindowScopePolicy::WindowOwned)
+        {
+            state->ownedScope = scope;
+        }
         state->options = options;
         state->lifetime = std::move(lifetime);
 
         const auto id = state->window->Id();
         std::weak_ptr<IWindowManager> weakManager = state->manager;
         std::weak_ptr<IWindow> weakWindow = state->window;
-        state->scope->RegisterCleanup(
+        scope->RegisterCleanup(
             [weakManager, weakWindow, id]() mutable -> Task<void>
             {
                 co_await DestroyWindowIfLive(
@@ -246,6 +311,30 @@ namespace TGE
                     std::move(weakWindow),
                     id);
             });
+
+        // Scope cleanups execute in reverse registration order. Register input
+        // after the window so input routing is detached before native window
+        // destruction.
+        if (state->inputContext)
+        {
+            const auto inputId = state->inputContext->Id();
+            std::weak_ptr<IInputManager> weakInputManager =
+                state->inputManager;
+            std::weak_ptr<IInputContext> weakInputContext =
+                state->inputContext;
+            scope->RegisterCleanup(
+                [
+                    weakInputManager,
+                    weakInputContext,
+                    inputId
+                ]() mutable -> Task<void>
+                {
+                    co_await DestroyInputContextIfLive(
+                        std::move(weakInputManager),
+                        std::move(weakInputContext),
+                        inputId);
+                });
+        }
 
         std::weak_ptr<State> weakState = state;
         state->closedSubscription = state->window->SubscribeClosed(
@@ -273,9 +362,15 @@ namespace TGE
         return state->window;
     }
 
+    std::shared_ptr<IInputContext> WindowSession::InputContext()
+        const noexcept
+    {
+        return state->inputContext;
+    }
+
     std::shared_ptr<ServiceScope> WindowSession::Scope() const noexcept
     {
-        return state->scope;
+        return state->scope.lock();
     }
 
     WindowScopePolicy WindowSession::ScopePolicy() const noexcept
@@ -285,13 +380,33 @@ namespace TGE
 
     Task<void> WindowSession::EndAsync()
     {
-        auto keepAlive = state;
+        return EndTask(state);
+    }
 
+    Task<void> WindowSession::EndTask(
+        std::shared_ptr<State> keepAlive)
+    {
         if (keepAlive->options.scopePolicy ==
             WindowScopePolicy::WindowOwned)
         {
-            co_await keepAlive->scope->EndAsync();
+            auto endingScope = keepAlive->ReleaseOwnedScope();
+            if (!endingScope)
+            {
+                endingScope = keepAlive->scope.lock();
+            }
+            if (endingScope)
+            {
+                co_await endingScope->EndAsync();
+            }
             co_return;
+        }
+
+        if (keepAlive->inputContext)
+        {
+            co_await DestroyInputContextIfLive(
+                keepAlive->inputManager,
+                keepAlive->inputContext,
+                keepAlive->inputContext->Id());
         }
 
         co_await DestroyWindowIfLive(

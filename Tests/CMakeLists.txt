@@ -46,8 +46,35 @@ endif()
 TGE_TEST_MODULE(Core)
 TGE_TEST_MODULE(Application)
 TGE_TEST_MODULE(CliApplication)
+TGE_TEST_MODULE(DesktopEventRuntime)
 TGE_TEST_MODULE(Graphics)
+TGE_TEST_MODULE(Input)
 TGE_TEST_MODULE(GuiApplication)
+if(TGE_MODULE_SDLDESKTOP)
+    TGE_TEST_MODULE(SDLDesktop)
+endif()
+
+add_test(
+    NAME Editor.HeadlessSmoke
+    COMMAND $<TARGET_FILE:tge_editor> --headless)
+set_tests_properties(
+    Editor.HeadlessSmoke
+    PROPERTIES
+        LABELS "Editor"
+        WORKING_DIRECTORY "$<TARGET_FILE_DIR:tge_editor>")
+
+if(TGE_MODULE_SDLDESKTOP)
+    add_test(
+        NAME Editor.SDLDesktopSmoke
+        COMMAND $<TARGET_FILE:tge_editor> --smoke)
+    set_tests_properties(
+        Editor.SDLDesktopSmoke
+        PROPERTIES
+            LABELS "Editor;SDL"
+            RUN_SERIAL TRUE
+            WORKING_DIRECTORY "$<TARGET_FILE_DIR:tge_editor>"
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+endif()
 
 # Exercise the installed public surface from a clean downstream project. Cross
 # builds cannot generally execute their produced consumer on the build host.

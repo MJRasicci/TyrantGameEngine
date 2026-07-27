@@ -3,5 +3,41 @@
 include(CMakeFindDependencyMacro)
 find_dependency(Threads)
 
+if(@TGE_INSTALLS_SDL3@ AND NOT TARGET TGE::SDL3)
+    if(WIN32)
+        find_library(
+            _tge_sdl3_import_library
+            NAMES SDL3
+            PATHS "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_LIBDIR@"
+            NO_DEFAULT_PATH
+            REQUIRED)
+        find_file(
+            _tge_sdl3_runtime
+            NAMES SDL3.dll SDL3-0.dll
+            PATHS "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_BINDIR@"
+            NO_DEFAULT_PATH
+            REQUIRED)
+
+        add_library(TGE::SDL3 SHARED IMPORTED)
+        set_target_properties(
+            TGE::SDL3
+            PROPERTIES
+                IMPORTED_IMPLIB "${_tge_sdl3_import_library}"
+                IMPORTED_LOCATION "${_tge_sdl3_runtime}")
+    else()
+        find_library(
+            _tge_sdl3_runtime
+            NAMES SDL3 SDL3-0
+            PATHS "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_LIBDIR@"
+            NO_DEFAULT_PATH
+            REQUIRED)
+
+        add_library(TGE::SDL3 SHARED IMPORTED)
+        set_target_properties(
+            TGE::SDL3
+            PROPERTIES IMPORTED_LOCATION "${_tge_sdl3_runtime}")
+    endif()
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/@PROJECT_NAME@Targets.cmake")
 check_required_components(@PROJECT_NAME@)

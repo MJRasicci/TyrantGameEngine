@@ -3,6 +3,7 @@
 #include <TGE/Core.hpp>
 #include <TGE/Graphics.hpp>
 #include <TGE/GuiApplication.hpp>
+#include <TGE/Input.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -13,6 +14,9 @@
 
 static_assert(std::is_abstract_v<TGE::IWindow>);
 static_assert(std::is_abstract_v<TGE::IWindowManager>);
+static_assert(std::is_abstract_v<TGE::IInputContext>);
+static_assert(std::is_abstract_v<TGE::IInputManager>);
+static_assert(std::is_abstract_v<TGE::IWindowInputContextFactory>);
 
 namespace
 {

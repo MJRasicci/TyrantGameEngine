@@ -4,7 +4,6 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
-#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -15,14 +14,32 @@
 #include <utility>
 #include <vector>
 
+#include "FakeDesktopEventPump.hpp"
 #include "Internal/Graphics/IWindowPlatform.hpp"
 
 namespace TGE::Tests
 {
+    struct FakeWindowPlatformLifecycle final
+    {
+        mutable std::mutex mutex;
+        std::vector<WindowId> destroyedWindows;
+        std::vector<std::thread::id> cleanupThreads;
+        std::size_t shutdownCount { 0 };
+        bool shutdownWithLiveWindows { false };
+    };
+
     class FakeWindowPlatform final : public Internal::IWindowPlatform
     {
     public:
-        FakeWindowPlatform()
+        explicit FakeWindowPlatform(
+            FakeDesktopEventPump& pump,
+            std::shared_ptr<std::atomic<std::size_t>>
+                destructionCount = {},
+            std::shared_ptr<FakeWindowPlatformLifecycle>
+                lifecycle = {})
+            : pump(pump),
+              destructionCount(std::move(destructionCount)),
+              lifecycle(std::move(lifecycle))
         {
             capabilities = WindowCapabilities {
                 .decorations = true,
@@ -44,43 +61,39 @@ namespace TGE::Tests
             };
         }
 
+        ~FakeWindowPlatform() override
+        {
+            if (destructionCount)
+            {
+                destructionCount->fetch_add(1);
+            }
+        }
+
         void SetEventSink(
             Internal::IWindowPlatformEventSink* eventSink) noexcept override
         {
-            std::scoped_lock lock(mutex);
+            std::scoped_lock lock(sinkMutex);
             sink = eventSink;
         }
 
-        void WakeEventLoop() noexcept override
+        void Shutdown() noexcept override
         {
+            std::size_t liveWindows;
             {
                 std::scoped_lock lock(mutex);
-                wakeRequested = true;
+                liveWindows = windows.size();
             }
-            wake.notify_all();
-        }
-
-        void PumpEvents(
-            std::chrono::milliseconds maxWait) noexcept override
-        {
-            std::vector<QueuedEvent> pending;
+            if (lifecycle)
             {
-                std::unique_lock lock(mutex);
-                wake.wait_for(
-                    lock,
-                    maxWait,
-                    [this]
-                    {
-                        return wakeRequested || !events.empty();
-                    });
-                wakeRequested = false;
-                pending.swap(events);
+                std::scoped_lock lock(lifecycle->mutex);
+                ++lifecycle->shutdownCount;
+                lifecycle->shutdownWithLiveWindows =
+                    lifecycle->shutdownWithLiveWindows ||
+                    liveWindows != 0;
+                lifecycle->cleanupThreads.emplace_back(
+                    std::this_thread::get_id());
             }
-
-            for (auto& event : pending)
-            {
-                Deliver(std::move(event));
-            }
+            alive->store(false);
         }
 
         Internal::WindowPlatformCreateResult CreateWindow(
@@ -168,18 +181,24 @@ namespace TGE::Tests
                 return std::unexpected(std::move(*failure));
             }
 
-            Internal::IWindowPlatformEventSink* currentSink = nullptr;
             {
                 std::scoped_lock lock(mutex);
                 if (windows.erase(id) == 0)
                 {
                     return DestroyedError();
                 }
-                currentSink = sink;
             }
-            if (currentSink)
+            if (lifecycle)
             {
-                currentSink->OnPlatformClosed(
+                std::scoped_lock lock(lifecycle->mutex);
+                lifecycle->destroyedWindows.emplace_back(id);
+                lifecycle->cleanupThreads.emplace_back(
+                    std::this_thread::get_id());
+            }
+            std::scoped_lock sinkLock(sinkMutex);
+            if (sink)
+            {
+                sink->OnPlatformClosed(
                     id,
                     WindowCloseReason::ApplicationRequest);
             }
@@ -322,17 +341,16 @@ namespace TGE::Tests
                 return std::unexpected(std::move(*failure));
             }
 
-            Internal::IWindowPlatformEventSink* currentSink = nullptr;
             {
                 std::scoped_lock lock(mutex);
                 if (!windows.contains(id))
                 {
                     return DestroyedError();
                 }
-                currentSink = sink;
             }
-            if (!currentSink ||
-                !currentSink->OnPlatformCloseRequested(
+            std::scoped_lock sinkLock(sinkMutex);
+            if (!sink ||
+                !sink->OnPlatformCloseRequested(
                     id,
                     WindowCloseReason::ApplicationRequest))
             {
@@ -343,7 +361,7 @@ namespace TGE::Tests
                 std::scoped_lock lock(mutex);
                 windows.erase(id);
             }
-            currentSink->OnPlatformClosed(
+            sink->OnPlatformClosed(
                 id,
                 WindowCloseReason::ApplicationRequest);
             return WindowOperationStatus::Applied;
@@ -353,48 +371,39 @@ namespace TGE::Tests
             WindowId id,
             WindowConfiguration configuration)
         {
-            {
-                std::scoped_lock lock(mutex);
-                events.emplace_back(QueuedEvent {
+            QueueEvent(QueuedEvent {
                     .type = EventType::Configuration,
                     .id = id,
                     .configuration = std::move(configuration)
                 });
-            }
-            WakeEventLoop();
         }
 
         void QueueConfigurations(
             WindowId id,
             std::vector<WindowConfiguration> configurations)
         {
+            std::vector<QueuedEvent> events;
+            events.reserve(configurations.size());
+            for (auto& configuration : configurations)
             {
-                std::scoped_lock lock(mutex);
-                for (auto& configuration : configurations)
-                {
-                    events.emplace_back(QueuedEvent {
+                events.emplace_back(QueuedEvent {
                         .type = EventType::Configuration,
                         .id = id,
                         .configuration = std::move(configuration)
                     });
-                }
             }
-            WakeEventLoop();
+            QueueEvents(std::move(events));
         }
 
         void QueueCloseRequest(
             WindowId id,
             WindowCloseReason reason = WindowCloseReason::UserRequest)
         {
-            {
-                std::scoped_lock lock(mutex);
-                events.emplace_back(QueuedEvent {
+            QueueEvent(QueuedEvent {
                     .type = EventType::CloseRequest,
                     .id = id,
                     .closeReason = reason
                 });
-            }
-            WakeEventLoop();
         }
 
         [[nodiscard]] std::optional<WindowConfiguration> Configuration(
@@ -491,7 +500,6 @@ namespace TGE::Tests
 
             WindowConfiguration configuration;
             WindowOperationStatus status;
-            Internal::IWindowPlatformEventSink* currentSink = nullptr;
             {
                 std::scoped_lock lock(mutex);
                 const auto found = windows.find(id);
@@ -501,12 +509,12 @@ namespace TGE::Tests
                 }
                 status = mutation(found->second);
                 configuration = found->second;
-                currentSink = sink;
             }
 
-            if (currentSink)
+            std::scoped_lock sinkLock(sinkMutex);
+            if (sink)
             {
-                currentSink->OnPlatformConfigurationChanged(
+                sink->OnPlatformConfigurationChanged(
                     id,
                     configuration);
             }
@@ -540,10 +548,8 @@ namespace TGE::Tests
 
         void Deliver(QueuedEvent event) noexcept
         {
-            Internal::IWindowPlatformEventSink* currentSink = nullptr;
             {
                 std::scoped_lock lock(mutex);
-                currentSink = sink;
                 if (event.type == EventType::Configuration)
                 {
                     const auto found = windows.find(event.id);
@@ -558,20 +564,21 @@ namespace TGE::Tests
                     return;
                 }
             }
-            if (!currentSink)
+            std::scoped_lock sinkLock(sinkMutex);
+            if (!sink)
             {
                 return;
             }
 
             if (event.type == EventType::Configuration)
             {
-                currentSink->OnPlatformConfigurationChanged(
+                sink->OnPlatformConfigurationChanged(
                     event.id,
                     std::move(event.configuration));
                 return;
             }
 
-            if (!currentSink->OnPlatformCloseRequested(
+            if (!sink->OnPlatformCloseRequested(
                     event.id,
                     event.closeReason))
             {
@@ -582,9 +589,38 @@ namespace TGE::Tests
                 std::scoped_lock lock(mutex);
                 windows.erase(event.id);
             }
-            currentSink->OnPlatformClosed(
+            sink->OnPlatformClosed(
                 event.id,
                 event.closeReason);
+        }
+
+        void QueueEvent(QueuedEvent event)
+        {
+            std::vector<QueuedEvent> events;
+            events.emplace_back(std::move(event));
+            QueueEvents(std::move(events));
+        }
+
+        void QueueEvents(std::vector<QueuedEvent> events)
+        {
+            std::weak_ptr<std::atomic<bool>> weakAlive = alive;
+            pump.Queue(
+                [
+                    this,
+                    weakAlive,
+                    events = std::move(events)
+                ]() mutable
+                {
+                    const auto current = weakAlive.lock();
+                    if (!current || !current->load())
+                    {
+                        return;
+                    }
+                    for (auto& event : events)
+                    {
+                        Deliver(std::move(event));
+                    }
+                });
         }
 
         static FramebufferSize ToFramebuffer(
@@ -621,15 +657,19 @@ namespace TGE::Tests
         }
 
         mutable std::mutex mutex;
-        std::condition_variable wake;
+        mutable std::recursive_mutex sinkMutex;
+        FakeDesktopEventPump& pump;
+        std::shared_ptr<std::atomic<bool>> alive {
+            std::make_shared<std::atomic<bool>>(true)
+        };
         Internal::IWindowPlatformEventSink* sink { nullptr };
-        bool wakeRequested { false };
         std::unordered_map<WindowId, WindowConfiguration> windows;
-        std::vector<QueuedEvent> events;
         std::optional<WindowError> nextFailure;
         std::vector<std::thread::id> platformCallThreads;
         std::chrono::milliseconds callDelay { 0 };
         std::atomic<std::size_t> activeCalls { 0 };
         std::atomic<std::size_t> maximumConcurrentCalls { 0 };
+        std::shared_ptr<std::atomic<std::size_t>> destructionCount;
+        std::shared_ptr<FakeWindowPlatformLifecycle> lifecycle;
     };
 }

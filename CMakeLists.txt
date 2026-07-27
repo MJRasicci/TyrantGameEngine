@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(TyrantGameEngine VERSION 2.0.0.0 LANGUAGES CXX)
+project(TyrantGameEngine VERSION 2.0.0.0 LANGUAGES C CXX)
 include(./CMake/Tyrant.cmake)
 include(CheckCXXSourceCompiles)
 include(CMakePackageConfigHelpers)
@@ -45,6 +45,11 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 TGE_OPTION(TGE_BUILD_SHARED BOOL FALSE "TRUE to build the runtime as a shared library, FALSE to build the runtime for static linkage")
 TGE_OPTION(TGE_BUILD_DOCS BOOL FALSE "TRUE to build the documentation, FALSE to not (requires doxygen)")
 TGE_OPTION(TGE_BUILD_TESTS BOOL FALSE "TRUE to enable building the test suite")
+TGE_OPTION(
+  TGE_MODULE_SDLDESKTOP
+  BOOL
+  TRUE
+  "TRUE to build the private SDL desktop window and input backend")
 TGE_OPTION(
   TGE_REFLECTION_DI
   STRING

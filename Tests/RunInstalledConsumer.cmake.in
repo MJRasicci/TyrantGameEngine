@@ -43,7 +43,7 @@ if(NOT EXISTS "${_tge_installed_editor}")
 endif()
 
 execute_process(
-    COMMAND "${_tge_installed_editor}"
+    COMMAND "${_tge_installed_editor}" --headless
     WORKING_DIRECTORY "${_tge_validation_root}"
     RESULT_VARIABLE _tge_result
     OUTPUT_VARIABLE _tge_output

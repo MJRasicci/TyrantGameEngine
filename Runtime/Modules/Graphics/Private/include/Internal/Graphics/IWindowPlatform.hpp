@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <expected>
 #include <string>
 
@@ -29,7 +28,7 @@ namespace TGE::Internal
         std::expected<WindowPlatformMutation, WindowError>;
 
     /**
-     * @brief Event receiver called exclusively on the platform dispatcher.
+     * @brief Event receiver called exclusively on the desktop event runtime.
      */
     class IWindowPlatformEventSink
     {
@@ -57,9 +56,13 @@ namespace TGE::Internal
     /**
      * @brief Private service-provider interface implemented by native backends.
      *
-     * Except for WakeEventLoop, every method is invoked on one serialized
-     * platform thread. PumpEvents may block for at most maxWait and delivers
-     * events to the configured sink before returning.
+     * Every method except SetEventSink is invoked on the shared desktop event
+     * runtime thread. SetEventSink is a thread-safe lifecycle boundary: after
+     * SetEventSink(nullptr) returns, the previous sink receives no new
+     * callbacks and all callbacks that had already entered it have returned.
+     *
+     * Native event pumping is deliberately not part of this interface. One
+     * process-level desktop pump is shared by windowing and input adapters.
      */
     class IWindowPlatform
     {
@@ -68,9 +71,15 @@ namespace TGE::Internal
 
         virtual void SetEventSink(
             IWindowPlatformEventSink* sink) noexcept = 0;
-        virtual void WakeEventLoop() noexcept = 0;
-        virtual void PumpEvents(
-            std::chrono::milliseconds maxWait) noexcept = 0;
+
+        /**
+         * @brief Release platform-side window adapter state on the event thread.
+         *
+         * All live windows have already received DestroyWindow before this
+         * method is called. Destruction of the C++ adapter may occur later on
+         * another thread and therefore must not call thread-affine APIs.
+         */
+        virtual void Shutdown() noexcept = 0;
 
         [[nodiscard]] virtual WindowPlatformCreateResult CreateWindow(
             WindowId id,

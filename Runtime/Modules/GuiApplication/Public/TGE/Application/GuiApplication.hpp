@@ -18,6 +18,7 @@
 
 namespace TGE
 {
+    class GuiApplicationContext;
     class WindowSession;
 
     namespace detail
@@ -27,11 +28,12 @@ namespace TGE
 
     /**
      * @class GuiApplication
-     * @brief Adds optional root-window policy to a generic Application.
+     * @brief Adds optional desktop and root-window policy to an Application.
      *
-     * GuiApplication does not own a platform event loop. It composes the
-     * generic host with IWindowManager when a root window is configured. With
-     * no root configuration it does not require a window-manager registration.
+     * The default backend's event queue is driven by Run on its calling thread,
+     * not by a hosted service. Root creation and root-close shutdown remain
+     * application composition policy above Graphics and Input. With no root
+     * configuration, no window or input service registration is required.
      */
     class TGE_API GuiApplication final
     {
@@ -61,6 +63,16 @@ namespace TGE
         void AddHostedService() &;
 
         /**
+         * @brief Register Tyrant's selected private desktop backend.
+         *
+         * The backend remains an implementation detail: callers receive only
+         * IWindowManager, IInputManager, and the window/input bridge through
+         * dependency injection. This operation may be called once before
+         * execution starts.
+         */
+        GuiApplication& UseDefaultDesktopBackend() &;
+
+        /**
          * @brief Configure the window whose closure stops this application.
          *
          * The root is created before user-registered hosted services start.
@@ -77,6 +89,16 @@ namespace TGE
          */
         [[nodiscard]] std::shared_ptr<WindowSession> RootSession() const;
 
+        /**
+         * @brief Run the GUI lifecycle and drive its desktop event queue here.
+         *
+         * When a desktop backend is configured, this calling thread becomes
+         * the platform event thread. Callers never need to marshal window or
+         * input operations themselves. Native UI constraints still apply to
+         * this entry point: for example, the default SDL backend requires the
+         * process main thread on Apple platforms and reports a startup error
+         * otherwise.
+         */
         int Run() &;
         Task<int> RunAsync() &;
 
@@ -86,6 +108,7 @@ namespace TGE
     private:
         Application application;
         std::shared_ptr<detail::GuiApplicationConfiguration> configuration;
+        std::shared_ptr<GuiApplicationContext> context;
     };
 
     template<class TService>

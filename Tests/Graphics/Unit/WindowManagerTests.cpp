@@ -3,6 +3,7 @@
 #include <barrier>
 #include <chrono>
 #include <condition_variable>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -16,6 +17,7 @@
 #include <gtest/gtest.h>
 
 #include "FakeWindowPlatform.hpp"
+#include "Internal/Desktop/DesktopEventRuntime.hpp"
 #include "Internal/Graphics/WindowManager.hpp"
 #include "TGE/Execution/Task.hpp"
 #include "TGE/Graphics.hpp"
@@ -48,20 +50,162 @@ namespace
         return std::move(*result);
     }
 
+    class BlockingWindowPlatformSink final
+        : public TGE::Internal::IWindowPlatformEventSink
+    {
+    public:
+        void OnPlatformConfigurationChanged(
+            TGE::WindowId,
+            TGE::WindowConfiguration) noexcept override
+        {
+            std::unique_lock lock(mutex);
+            callbackEntered = true;
+            condition.notify_all();
+            condition.wait(
+                lock,
+                [this]
+                {
+                    return callbackReleased;
+                });
+        }
+
+        bool OnPlatformCloseRequested(
+            TGE::WindowId,
+            TGE::WindowCloseReason) noexcept override
+        {
+            return true;
+        }
+
+        void OnPlatformClosed(
+            TGE::WindowId,
+            TGE::WindowCloseReason) noexcept override
+        {
+        }
+
+        bool WaitUntilCallbackEntered()
+        {
+            std::unique_lock lock(mutex);
+            return condition.wait_for(
+                lock,
+                std::chrono::seconds(2),
+                [this]
+                {
+                    return callbackEntered;
+                });
+        }
+
+        void ReleaseCallback()
+        {
+            {
+                std::scoped_lock lock(mutex);
+                callbackReleased = true;
+            }
+            condition.notify_all();
+        }
+
+    private:
+        std::mutex mutex;
+        std::condition_variable condition;
+        bool callbackEntered { false };
+        bool callbackReleased { false };
+    };
+
+    TEST(
+        WindowPlatformContract,
+        DetachingEventSinkWaitsForEnteredCallbacksToReturn)
+    {
+        TGE::Tests::FakeDesktopEventPump pump;
+        TGE::Tests::FakeWindowPlatform platform(pump);
+        BlockingWindowPlatformSink sink;
+        platform.SetEventSink(&sink);
+
+        const auto id = TGE::WindowId::FromValue(1);
+        ASSERT_TRUE(platform.CreateWindow(id, TGE::WindowDescriptor {}));
+
+        auto mutation = std::async(
+            std::launch::async,
+            [&platform, id]
+            {
+                return platform.SetTitle(id, "Blocked callback");
+            });
+
+        const auto callbackEntered = sink.WaitUntilCallbackEntered();
+        if (!callbackEntered)
+        {
+            sink.ReleaseCallback();
+        }
+        ASSERT_TRUE(callbackEntered);
+
+        std::promise<void> detachStarted;
+        auto detachStartedFuture = detachStarted.get_future();
+        auto detach = std::async(
+            std::launch::async,
+            [
+                &platform,
+                detachStarted = std::move(detachStarted)
+            ]() mutable
+            {
+                detachStarted.set_value();
+                platform.SetEventSink(nullptr);
+            });
+        detachStartedFuture.wait();
+
+        EXPECT_EQ(
+            detach.wait_for(std::chrono::milliseconds(25)),
+            std::future_status::timeout);
+
+        sink.ReleaseCallback();
+
+        ASSERT_EQ(
+            mutation.wait_for(std::chrono::seconds(2)),
+            std::future_status::ready);
+        ASSERT_TRUE(mutation.get());
+        ASSERT_EQ(
+            detach.wait_for(std::chrono::seconds(2)),
+            std::future_status::ready);
+        detach.get();
+    }
+
     struct ManagerFixture : testing::Test
     {
         void SetUp() override
         {
+            auto eventPump =
+                std::make_unique<TGE::Tests::FakeDesktopEventPump>();
+            pump = eventPump.get();
+            runtime =
+                std::make_shared<TGE::Internal::DesktopEventRuntime>(
+                    std::move(eventPump));
+
             auto platform =
-                std::make_unique<TGE::Tests::FakeWindowPlatform>();
+                std::make_unique<TGE::Tests::FakeWindowPlatform>(*pump);
             fake = platform.get();
             manager =
                 std::make_unique<TGE::Internal::WindowManager>(
+                    runtime,
                     std::move(platform));
+
+            runner = std::jthread(
+                [runtime = runtime](std::stop_token stopping)
+                {
+                    (void)runtime->Run(stopping);
+                });
+            ASSERT_TRUE(pump->WaitUntilStarted());
         }
 
+        void TearDown() override
+        {
+            manager.reset();
+            runtime->RequestStop();
+            runner.join();
+            runtime.reset();
+        }
+
+        TGE::Tests::FakeDesktopEventPump* pump { nullptr };
         TGE::Tests::FakeWindowPlatform* fake { nullptr };
+        std::shared_ptr<TGE::Internal::DesktopEventRuntime> runtime;
         std::unique_ptr<TGE::Internal::WindowManager> manager;
+        std::jthread runner;
     };
 
     TEST_F(
@@ -178,7 +322,7 @@ namespace
             callThreads.begin(),
             callThreads.end());
         EXPECT_EQ(uniqueThreads.size(), 1U);
-        EXPECT_NE(*uniqueThreads.begin(), std::this_thread::get_id());
+        EXPECT_EQ(*uniqueThreads.begin(), pump->RunnerThread());
     }
 
     TEST_F(
@@ -460,6 +604,86 @@ namespace
 
     TEST_F(
         ManagerFixture,
+        DetachingAnAncestorReconcilesNestedParentTreeSuppression)
+    {
+        const auto root = Create(
+            *manager,
+            TGE::WindowDescriptor { .title = "Root" });
+        const auto parent = Create(
+            *manager,
+            TGE::WindowDescriptor {
+                .title = "Parent",
+                .role = TGE::WindowRole::Child,
+                .parent = root->Id()
+            });
+        const auto retainedBranch = Create(
+            *manager,
+            TGE::WindowDescriptor {
+                .title = "Retained branch",
+                .role = TGE::WindowRole::Child,
+                .parent = parent->Id()
+            });
+        const auto modal = Create(
+            *manager,
+            TGE::WindowDescriptor {
+                .title = "Nested modal",
+                .role = TGE::WindowRole::Modal,
+                .parent = retainedBranch->Id(),
+                .modality =
+                    TGE::WindowModality::DisableParentTree
+            });
+
+        ASSERT_FALSE(root->IsInputEnabled());
+        ASSERT_FALSE(parent->IsInputEnabled());
+        ASSERT_FALSE(retainedBranch->IsInputEnabled());
+        ASSERT_TRUE(modal->IsInputEnabled());
+
+        std::mutex mutex;
+        std::condition_variable restored;
+        bool rootRestored = false;
+        auto inputSubscription = root->SubscribeInputChanged(
+            [&](const TGE::WindowInputChangedEvent& event)
+            {
+                {
+                    std::scoped_lock lock(mutex);
+                    rootRestored = event.enabled;
+                }
+                restored.notify_all();
+            });
+
+        auto detached =
+            retainedBranch->EffectiveConfiguration();
+        detached.parent.reset();
+        detached.role = TGE::WindowRole::TopLevel;
+        fake->QueueConfiguration(
+            retainedBranch->Id(),
+            std::move(detached));
+
+        {
+            std::unique_lock lock(mutex);
+            ASSERT_TRUE(restored.wait_for(
+                lock,
+                std::chrono::seconds(2),
+                [&]
+                {
+                    return rootRestored;
+                }));
+        }
+
+        // The root callback is delivered while reconciliation is still
+        // walking later records. Queue one facade operation behind that work
+        // before inspecting every affected ancestor.
+        ASSERT_TRUE(Wait(retainedBranch->SetTitleAsync(
+            "Retained branch after detach")));
+
+        EXPECT_TRUE(root->IsInputEnabled());
+        EXPECT_TRUE(parent->IsInputEnabled());
+        EXPECT_FALSE(retainedBranch->IsInputEnabled());
+        EXPECT_TRUE(modal->IsInputEnabled());
+    }
+
+    TEST_F(
+        ManagerFixture,
         ApplicationModalSuppressesWindowsCreatedWhileItIsOpen)
     {
         const auto existing = Create(
@@ -542,14 +766,35 @@ namespace
         WindowManagerLifetime,
         ManagerShutdownDestroysRetainedFacadesAndFutureCallsFailSafely)
     {
+        auto eventPump =
+            std::make_unique<TGE::Tests::FakeDesktopEventPump>();
+        auto* pump = eventPump.get();
+        auto runtime =
+            std::make_shared<TGE::Internal::DesktopEventRuntime>(
+                std::move(eventPump));
+        std::jthread runner(
+            [runtime](std::stop_token stopping)
+            {
+                (void)runtime->Run(stopping);
+            });
+        ASSERT_TRUE(pump->WaitUntilStarted());
+
         std::shared_ptr<TGE::IWindow> retained;
+        std::atomic<std::size_t> closedCallbacks { 0 };
+        TGE::WindowSubscription closedSubscription;
         {
             auto platform =
-                std::make_unique<TGE::Tests::FakeWindowPlatform>();
+                std::make_unique<TGE::Tests::FakeWindowPlatform>(*pump);
             auto manager =
                 std::make_unique<TGE::Internal::WindowManager>(
+                    runtime,
                     std::move(platform));
             retained = Create(*manager);
+            closedSubscription = retained->SubscribeClosed(
+                [&](const TGE::WindowClosedEvent&)
+                {
+                    closedCallbacks.fetch_add(1);
+                });
         }
 
         ASSERT_TRUE(retained);
@@ -562,18 +807,201 @@ namespace
         EXPECT_EQ(
             operation.error().code,
             TGE::WindowErrorCode::ManagerStopped);
+        EXPECT_EQ(closedCallbacks.load(), 0U);
+
+        runtime->RequestStop();
+        runner.join();
+    }
+
+    TEST(
+        WindowManagerLifetime,
+        OffThreadFallbackDestroysChildrenBeforePlatformShutdown)
+    {
+        auto eventPump =
+            std::make_unique<TGE::Tests::FakeDesktopEventPump>();
+        auto* pump = eventPump.get();
+        auto runtime =
+            std::make_shared<TGE::Internal::DesktopEventRuntime>(
+                std::move(eventPump));
+        auto lifecycle =
+            std::make_shared<
+                TGE::Tests::FakeWindowPlatformLifecycle>();
+        auto platform =
+            std::make_unique<TGE::Tests::FakeWindowPlatform>(
+                *pump,
+                std::shared_ptr<std::atomic<std::size_t>> {},
+                lifecycle);
+        auto manager =
+            std::make_unique<TGE::Internal::WindowManager>(
+                runtime,
+                std::move(platform));
+
+        std::jthread runner(
+            [runtime](std::stop_token stopping)
+            {
+                (void)runtime->Run(stopping);
+            });
+        ASSERT_TRUE(pump->WaitUntilStarted());
+
+        const auto parent = Create(
+            *manager,
+            TGE::WindowDescriptor { .title = "Parent" });
+        const auto child = Create(
+            *manager,
+            TGE::WindowDescriptor {
+                .title = "Child",
+                .role = TGE::WindowRole::Child,
+                .parent = parent->Id()
+            });
+
+        manager.reset();
+
+        auto flushed = TGE::Execution::SyncWait(
+            runtime->Submit(
+                []
+                {
+                    return true;
+                }));
+        ASSERT_TRUE(flushed);
+
+        {
+            std::scoped_lock lock(lifecycle->mutex);
+            EXPECT_EQ(
+                lifecycle->destroyedWindows,
+                (std::vector<TGE::WindowId> {
+                    child->Id(),
+                    parent->Id()
+                }));
+            EXPECT_EQ(lifecycle->shutdownCount, 1U);
+            EXPECT_FALSE(lifecycle->shutdownWithLiveWindows);
+            ASSERT_EQ(lifecycle->cleanupThreads.size(), 3U);
+            EXPECT_TRUE(std::ranges::all_of(
+                lifecycle->cleanupThreads,
+                [pump](std::thread::id thread)
+                {
+                    return thread == pump->RunnerThread();
+                }));
+        }
+
+        runtime->RequestStop();
+        runner.join();
+    }
+
+    TEST(
+        WindowManagerLifetime,
+        DestructionBeforeTheDesktopRuntimeStartsNeverBlocks)
+    {
+        auto eventPump =
+            std::make_unique<TGE::Tests::FakeDesktopEventPump>();
+        auto* pump = eventPump.get();
+        auto runtime =
+            std::make_shared<TGE::Internal::DesktopEventRuntime>(
+                std::move(eventPump));
+        auto destructions =
+            std::make_shared<std::atomic<std::size_t>>(0);
+        auto platform =
+            std::make_unique<TGE::Tests::FakeWindowPlatform>(
+                *pump,
+                destructions);
+
+        const auto started = std::chrono::steady_clock::now();
+        {
+            auto manager =
+                std::make_unique<TGE::Internal::WindowManager>(
+                    runtime,
+                    std::move(platform));
+        }
+        const auto elapsed =
+            std::chrono::steady_clock::now() - started;
+
+        EXPECT_LT(elapsed, std::chrono::milliseconds(100));
+        EXPECT_FALSE(
+            pump->WaitUntilStarted(std::chrono::milliseconds(1)));
+
+        // Releasing the never-run runtime abandons the deferred cleanup
+        // command and safely releases the adapter state.
+        EXPECT_EQ(destructions->load(), 0U);
+        runtime.reset();
+        EXPECT_EQ(destructions->load(), 1U);
+    }
+
+    TEST(
+        WindowManagerLifetime,
+        PreRunOperationIsRejectedWhenManagerAndRuntimeAreReleased)
+    {
+        auto eventPump =
+            std::make_unique<TGE::Tests::FakeDesktopEventPump>();
+        auto* pump = eventPump.get();
+        auto runtime =
+            std::make_shared<TGE::Internal::DesktopEventRuntime>(
+                std::move(eventPump));
+        auto destructions =
+            std::make_shared<std::atomic<std::size_t>>(0);
+        auto platform =
+            std::make_unique<TGE::Tests::FakeWindowPlatform>(
+                *pump,
+                destructions);
+        auto manager =
+            std::make_unique<TGE::Internal::WindowManager>(
+                runtime,
+                std::move(platform));
+        auto pending = manager->CreateWindowAsync(
+            TGE::WindowDescriptor { .title = "Never started" });
+        std::promise<void> waiting;
+        auto waitingFuture = waiting.get_future();
+        auto result = std::async(
+            std::launch::async,
+            [
+                pending = std::move(pending),
+                waiting = std::move(waiting)
+            ]() mutable
+            {
+                waiting.set_value();
+                return Wait(std::move(pending));
+            });
+        waitingFuture.wait();
+        EXPECT_EQ(
+            result.wait_for(std::chrono::milliseconds(20)),
+            std::future_status::timeout);
+
+        manager.reset();
+        runtime.reset();
+
+        ASSERT_EQ(
+            result.wait_for(std::chrono::seconds(2)),
+            std::future_status::ready);
+        const auto completion = result.get();
+        ASSERT_FALSE(completion);
+        EXPECT_EQ(
+            completion.error().code,
+            TGE::WindowErrorCode::ManagerStopped);
+        EXPECT_EQ(destructions->load(), 1U);
     }
 
     TEST(
         WindowManagerLifetime,
         ConcurrentOperationsEitherFinishOrObserveOrderlyManagerShutdown)
     {
+        auto eventPump =
+            std::make_unique<TGE::Tests::FakeDesktopEventPump>();
+        auto* pump = eventPump.get();
+        auto runtime =
+            std::make_shared<TGE::Internal::DesktopEventRuntime>(
+                std::move(eventPump));
         auto platform =
-            std::make_unique<TGE::Tests::FakeWindowPlatform>();
+            std::make_unique<TGE::Tests::FakeWindowPlatform>(*pump);
         platform->SetCallDelay(std::chrono::milliseconds(3));
         auto manager =
             std::make_unique<TGE::Internal::WindowManager>(
+                runtime,
                 std::move(platform));
+
+        std::jthread runner(
+            [runtime](std::stop_token stopping)
+            {
+                (void)runtime->Run(stopping);
+            });
+        ASSERT_TRUE(pump->WaitUntilStarted());
         const auto retained = Create(*manager);
 
         constexpr std::size_t callerCount = 10;
@@ -621,6 +1049,9 @@ namespace
         EXPECT_EQ(
             retained->LifecycleState(),
             TGE::WindowLifecycleState::Destroyed);
+
+        runtime->RequestStop();
+        runner.join();
     }
 
     TEST_F(

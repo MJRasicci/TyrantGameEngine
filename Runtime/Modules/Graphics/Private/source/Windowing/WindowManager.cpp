@@ -17,8 +17,8 @@
 #include <utility>
 #include <vector>
 
+#include "Internal/Desktop/DesktopEventRuntime.hpp"
 #include "Internal/Graphics/IWindowPlatform.hpp"
-#include "Internal/Graphics/WindowCommandDispatcher.hpp"
 #include "TGE/Graphics/IWindow.hpp"
 
 namespace TGE::Internal
@@ -127,8 +127,14 @@ namespace TGE::Internal
         };
 
         static std::shared_ptr<State> Create(
+            std::shared_ptr<DesktopEventRuntime> runtime,
             std::unique_ptr<IWindowPlatform> platform)
         {
+            if (!runtime)
+            {
+                throw std::invalid_argument(
+                    "A window manager requires a desktop event runtime.");
+            }
             if (!platform)
             {
                 throw std::invalid_argument(
@@ -136,9 +142,9 @@ namespace TGE::Internal
             }
 
             auto result = std::shared_ptr<State>(new State);
-            result->dispatcher = std::make_unique<WindowCommandDispatcher>(
-                std::move(platform),
-                std::static_pointer_cast<IWindowPlatformEventSink>(result));
+            result->runtime = std::move(runtime);
+            result->platform = std::move(platform);
+            result->platform->SetEventSink(result.get());
             return result;
         }
 
@@ -168,6 +174,11 @@ namespace TGE::Internal
                 std::move(mutation));
         }
 
+        Task<void> ShutdownAsync()
+        {
+            return ShutdownTask(shared_from_this());
+        }
+
         static Task<WindowResult> CreateWindowTask(
             std::shared_ptr<State> self,
             WindowDescriptor descriptor)
@@ -181,17 +192,28 @@ namespace TGE::Internal
 
             try
             {
-                co_return co_await self->dispatcher->Submit(
+                auto runtime = self->runtime.lock();
+                if (!runtime)
+                {
+                    co_return std::unexpected(MakeError(
+                        WindowErrorCode::ManagerStopped,
+                        "The desktop event runtime is unavailable."));
+                }
+                auto submission = runtime->Submit(
                     [self, descriptor = std::move(descriptor)]() mutable
                     {
                         return self->CreateWindowOnDispatcher(
                             std::move(descriptor));
                     });
+                runtime.reset();
+                co_return co_await std::move(submission);
             }
             catch (...)
             {
+                const auto runtime = self->runtime.lock();
                 if (self->stopping.load() ||
-                    !self->dispatcher->IsAccepting())
+                    !runtime ||
+                    !runtime->IsAccepting())
                 {
                     co_return std::unexpected(MakeError(
                         WindowErrorCode::ManagerStopped,
@@ -213,7 +235,12 @@ namespace TGE::Internal
 
             try
             {
-                co_return co_await self->dispatcher->Submit(
+                auto runtime = self->runtime.lock();
+                if (!runtime)
+                {
+                    co_return ManagerStoppedResult();
+                }
+                auto submission = runtime->Submit(
                     [self, id]
                     {
                         return self->DestroyWindowOnDispatcher(
@@ -221,11 +248,15 @@ namespace TGE::Internal
                             WindowCloseReason::ApplicationRequest,
                             false);
                     });
+                runtime.reset();
+                co_return co_await std::move(submission);
             }
             catch (...)
             {
+                const auto runtime = self->runtime.lock();
                 if (self->stopping.load() ||
-                    !self->dispatcher->IsAccepting())
+                    !runtime ||
+                    !runtime->IsAccepting())
                 {
                     co_return ManagerStoppedResult();
                 }
@@ -247,7 +278,12 @@ namespace TGE::Internal
 
             try
             {
-                co_return co_await self->dispatcher->Submit(
+                auto runtime = self->runtime.lock();
+                if (!runtime)
+                {
+                    co_return ManagerStoppedResult();
+                }
+                auto submission = runtime->Submit(
                     [
                         self,
                         record = std::move(record),
@@ -260,15 +296,65 @@ namespace TGE::Internal
                         }
                         return mutation(*self, record);
                     });
+                runtime.reset();
+                co_return co_await std::move(submission);
             }
             catch (...)
             {
+                const auto runtime = self->runtime.lock();
                 if (self->stopping.load() ||
-                    !self->dispatcher->IsAccepting())
+                    !runtime ||
+                    !runtime->IsAccepting())
                 {
                     co_return ManagerStoppedResult();
                 }
                 co_return ExceptionResult("Window operation failed");
+            }
+        }
+
+        static Task<void> ShutdownTask(std::shared_ptr<State> self)
+        {
+            if (self->stopping.exchange(true))
+            {
+                co_return;
+            }
+
+            bool cleanedOnRuntime = false;
+            try
+            {
+                auto runtime = self->runtime.lock();
+                if (!runtime)
+                {
+                    throw std::runtime_error(
+                        "The desktop event runtime is unavailable.");
+                }
+                auto submission = runtime->Submit(
+                    [self]
+                    {
+                        self->DestroyAllOnDispatcher();
+                        self->platform->SetEventSink(nullptr);
+                        self->platform->Shutdown();
+                    });
+                runtime.reset();
+                co_await std::move(submission);
+                cleanedOnRuntime = true;
+            }
+            catch (...)
+            {
+                // Detaching the sink is explicitly thread-safe. Thread-affine
+                // cleanup cannot be recovered after the shared runtime stops,
+                // but public facades still transition to a terminal state.
+                self->platform->SetEventSink(nullptr);
+            }
+
+            if (cleanedOnRuntime)
+            {
+                self->MarkAllDestroyed(
+                    WindowCloseReason::ApplicationRequest);
+            }
+            else
+            {
+                self->AbandonAllWindows();
             }
         }
 
@@ -301,6 +387,35 @@ namespace TGE::Internal
 
         void Shutdown() noexcept
         {
+            if (stopping.load())
+            {
+                return;
+            }
+
+            const auto currentRuntime = runtime.lock();
+            if (!currentRuntime ||
+                !currentRuntime->IsEventThread())
+            {
+                ShutdownFallback();
+                return;
+            }
+
+            try
+            {
+                auto completion =
+                    Execution::SyncWait(ShutdownAsync());
+                (void)completion;
+            }
+            catch (...)
+            {
+                platform->SetEventSink(nullptr);
+                MarkAllDestroyed(
+                    WindowCloseReason::ApplicationRequest);
+            }
+        }
+
+        void ShutdownFallback() noexcept
+        {
             if (stopping.exchange(true))
             {
                 return;
@@ -308,22 +423,56 @@ namespace TGE::Internal
 
             try
             {
-                auto self = shared_from_this();
-                auto completion = Execution::SyncWait(dispatcher->Submit(
-                    [self]
-                    {
-                        self->DestroyAllOnDispatcher();
-                        return true;
-                    }));
-                (void)completion;
+                // Sink detachment is the SPI's cross-thread quiescence
+                // boundary. Public facades become terminal immediately while
+                // thread-affine platform cleanup is queued without blocking a
+                // runtime that may not have started yet.
+                platform->SetEventSink(nullptr);
+                std::vector<WindowId> deferredWindows;
+                {
+                    std::scoped_lock lock(mutex);
+                    deferredWindows.assign(
+                        order.rbegin(),
+                        order.rend());
+                }
+                AbandonAllWindows();
+
+                auto deferredPlatform = platform;
+                if (const auto currentRuntime = runtime.lock())
+                {
+                    (void)currentRuntime->Post(
+                        [
+                            deferredPlatform =
+                                std::move(deferredPlatform),
+                            deferredWindows =
+                                std::move(deferredWindows)
+                        ]() noexcept
+                        {
+                            for (const auto id : deferredWindows)
+                            {
+                                try
+                                {
+                                    (void)deferredPlatform->DestroyWindow(id);
+                                }
+                                catch (...)
+                                {
+                                }
+                            }
+                            deferredPlatform->Shutdown();
+                        });
+                }
             }
             catch (...)
             {
-                MarkAllDestroyed(WindowCloseReason::ApplicationRequest);
+                try
+                {
+                    platform->SetEventSink(nullptr);
+                }
+                catch (...)
+                {
+                }
+                AbandonAllWindows();
             }
-
-            dispatcher->Stop();
-            MarkAllDestroyed(WindowCloseReason::ApplicationRequest);
         }
 
         bool OnPlatformCloseRequested(
@@ -363,7 +512,9 @@ namespace TGE::Internal
                 }
 
                 auto self = shared_from_this();
-                if (!dispatcher->Post(
+                const auto currentRuntime = runtime.lock();
+                if (!currentRuntime ||
+                    !currentRuntime->Post(
                         [self, id]
                         {
                             self->FlushPendingConfiguration(id);
@@ -424,7 +575,7 @@ namespace TGE::Internal
             if (suppressed && configuration.inputEnabled)
             {
                 auto correction =
-                    dispatcher->Platform().SetInputEnabled(id, false);
+                    platform->SetInputEnabled(id, false);
                 if (correction)
                 {
                     configuration =
@@ -469,7 +620,7 @@ namespace TGE::Internal
                 record->pendingCloseReason = reason;
             }
 
-            auto result = dispatcher->Platform().DestroyWindow(id);
+            auto result = platform->DestroyWindow(id);
             if (!result)
             {
                 if (forceTerminal)
@@ -510,7 +661,7 @@ namespace TGE::Internal
                     "The window is not open."));
             }
 
-            auto result = operation(dispatcher->Platform());
+            auto result = operation(*platform);
             if (!result)
             {
                 return std::unexpected(std::move(result.error()));
@@ -551,7 +702,7 @@ namespace TGE::Internal
             }
 
             auto result =
-                dispatcher->Platform().SetInputEnabled(record->id, effective);
+                platform->SetInputEnabled(record->id, effective);
             if (!result)
             {
                 return std::unexpected(std::move(result.error()));
@@ -583,7 +734,7 @@ namespace TGE::Internal
             }
 
             auto result =
-                dispatcher->Platform().RequestClose(record->id);
+                platform->RequestClose(record->id);
             if (!result)
             {
                 std::scoped_lock lock(record->mutex);
@@ -611,6 +762,7 @@ namespace TGE::Internal
             bool stateChanged = false;
             bool focusChanged = false;
             bool inputChanged = false;
+            bool suppressionPolicyChanged = false;
 
             std::vector<
                 std::shared_ptr<
@@ -674,6 +826,9 @@ namespace TGE::Internal
                 focusChanged = previous.focused != configuration.focused;
                 inputChanged =
                     previous.inputEnabled != configuration.inputEnabled;
+                suppressionPolicyChanged =
+                    previous.parent != configuration.parent ||
+                    previous.modality != configuration.modality;
 
                 record->configuration = configuration;
                 movedCallbacks = Snapshot(record->moved);
@@ -757,6 +912,15 @@ namespace TGE::Internal
                     .previous = std::move(previous),
                     .current = std::move(configuration)
                 });
+
+            // A backend can normalize an ownership relationship after
+            // creation, most notably when a retained child loses its parent.
+            // Rebuild the complete suppression graph because changing one
+            // ancestor can alter a nested modal's entire parent tree.
+            if (suppressionPolicyChanged)
+            {
+                ReconcileModalSuppression();
+            }
         }
 
         bool DispatchCloseRequested(
@@ -911,7 +1075,7 @@ namespace TGE::Internal
                     return false;
                 }
                 modality = modal->configuration.modality;
-                parent = modal->requested.parent;
+                parent = modal->configuration.parent;
             }
 
             switch (modality)
@@ -943,6 +1107,116 @@ namespace TGE::Internal
             return false;
         }
 
+        void ReconcileModalSuppression()
+        {
+            std::vector<std::shared_ptr<Record>> records;
+            {
+                std::scoped_lock lock(mutex);
+                records.reserve(order.size());
+                for (const auto id : order)
+                {
+                    const auto found = windows.find(id);
+                    if (found != windows.end() &&
+                        IsOpen(found->second.record))
+                    {
+                        records.emplace_back(found->second.record);
+                    }
+                }
+            }
+
+            std::unordered_map<
+                WindowId,
+                std::unordered_set<WindowId>> desiredSources;
+            desiredSources.reserve(records.size());
+            for (const auto& record : records)
+            {
+                desiredSources.try_emplace(record->id);
+            }
+
+            // Replay creation order to retain the modal-layer rule used when
+            // windows are first opened: a newly created modal supersedes older
+            // modal layers, while a later modeless window is suppressed by
+            // every earlier modal whose effective policy targets it.
+            for (std::size_t index = 0; index < records.size(); ++index)
+            {
+                const auto& current = records[index];
+                const auto currentConfiguration = Configuration(current);
+
+                if (currentConfiguration.modality ==
+                    WindowModality::Modeless)
+                {
+                    for (std::size_t prior = 0; prior < index; ++prior)
+                    {
+                        if (ShouldSuppress(records[prior], current))
+                        {
+                            desiredSources[current->id].emplace(
+                                records[prior]->id);
+                        }
+                    }
+                }
+
+                for (std::size_t prior = 0; prior < index; ++prior)
+                {
+                    if (ShouldSuppress(current, records[prior]))
+                    {
+                        desiredSources[records[prior]->id].emplace(
+                            current->id);
+                    }
+                }
+            }
+
+            for (const auto& target : records)
+            {
+                bool updatePlatform = false;
+                bool effectiveInput = false;
+                {
+                    std::scoped_lock lock(target->mutex);
+                    if (target->lifecycle !=
+                        WindowLifecycleState::Open)
+                    {
+                        continue;
+                    }
+
+                    target->suppressionSources =
+                        std::move(desiredSources[target->id]);
+                    effectiveInput =
+                        target->requestedInputEnabled &&
+                        target->suppressionSources.empty();
+                    updatePlatform =
+                        effectiveInput !=
+                        target->configuration.inputEnabled;
+                }
+
+                if (!updatePlatform)
+                {
+                    continue;
+                }
+
+                auto result = platform->SetInputEnabled(
+                    target->id,
+                    effectiveInput);
+                if (result)
+                {
+                    auto configuration =
+                        std::move(result->configuration);
+                    configuration.inputEnabled = effectiveInput;
+                    ApplyConfiguration(
+                        target,
+                        std::move(configuration));
+                }
+                else if (!effectiveInput)
+                {
+                    // Suppression remains authoritative even if a backend
+                    // cannot express it through a native window attribute.
+                    auto configuration = Configuration(target);
+                    configuration.inputEnabled = false;
+                    ApplyConfiguration(
+                        target,
+                        std::move(configuration));
+                }
+            }
+        }
+
         void AddSuppression(
             const std::shared_ptr<Record>& target,
             WindowId source)
@@ -965,7 +1239,7 @@ namespace TGE::Internal
             }
 
             auto result =
-                dispatcher->Platform().SetInputEnabled(target->id, false);
+                platform->SetInputEnabled(target->id, false);
             if (result)
             {
                 auto configuration = std::move(result->configuration);
@@ -1021,7 +1295,7 @@ namespace TGE::Internal
                     continue;
                 }
 
-                auto result = dispatcher->Platform().SetInputEnabled(
+                auto result = platform->SetInputEnabled(
                     target->id,
                     true);
                 if (result)
@@ -1093,6 +1367,53 @@ namespace TGE::Internal
             std::scoped_lock lock(mutex);
             windows.clear();
             order.clear();
+        }
+
+        template<class TCallback>
+        static void DeactivateAndClear(
+            SubscriptionMap<TCallback>& subscriptions) noexcept
+        {
+            for (auto& [id, subscription] : subscriptions)
+            {
+                (void)id;
+                subscription->active.store(false);
+            }
+            subscriptions.clear();
+        }
+
+        void AbandonAllWindows() noexcept
+        {
+            std::vector<std::shared_ptr<Record>> records;
+            {
+                std::scoped_lock lock(mutex);
+                records.reserve(windows.size());
+                for (const auto& [id, managed] : windows)
+                {
+                    (void)id;
+                    records.emplace_back(managed.record);
+                }
+                windows.clear();
+                order.clear();
+                pendingConfigurations.clear();
+            }
+
+            for (const auto& record : records)
+            {
+                std::scoped_lock lock(record->mutex);
+                record->pendingCloseReason.reset();
+                record->suppressionSources.clear();
+                record->lifecycle =
+                    WindowLifecycleState::Destroyed;
+                DeactivateAndClear(record->closeRequested);
+                DeactivateAndClear(record->closed);
+                DeactivateAndClear(record->moved);
+                DeactivateAndClear(record->resized);
+                DeactivateAndClear(record->scaleChanged);
+                DeactivateAndClear(record->stateChanged);
+                DeactivateAndClear(record->focusChanged);
+                DeactivateAndClear(record->inputChanged);
+                DeactivateAndClear(record->configurationChanged);
+            }
         }
 
         std::shared_ptr<Record> FindRecord(WindowId id) const noexcept
@@ -1213,7 +1534,8 @@ namespace TGE::Internal
             pendingConfigurations;
         std::atomic<std::uint64_t> nextWindowId { 1 };
         std::atomic<bool> stopping { false };
-        std::unique_ptr<WindowCommandDispatcher> dispatcher;
+        std::weak_ptr<DesktopEventRuntime> runtime;
+        std::shared_ptr<IWindowPlatform> platform;
     };
 
     struct WindowManager::State::WindowFacade final : IWindow
@@ -1580,7 +1902,7 @@ namespace TGE::Internal
         const auto id =
             WindowId::FromValue(nextWindowId.fetch_add(1));
         auto platformResult =
-            dispatcher->Platform().CreateWindow(id, descriptor);
+            platform->CreateWindow(id, descriptor);
         if (!platformResult)
         {
             return std::unexpected(std::move(platformResult.error()));
@@ -1628,8 +1950,12 @@ namespace TGE::Internal
         return std::static_pointer_cast<IWindow>(std::move(facade));
     }
 
-    WindowManager::WindowManager(std::unique_ptr<IWindowPlatform> platform)
-        : state(State::Create(std::move(platform)))
+    WindowManager::WindowManager(
+        std::shared_ptr<DesktopEventRuntime> runtime,
+        std::unique_ptr<IWindowPlatform> platform)
+        : state(State::Create(
+              std::move(runtime),
+              std::move(platform)))
     {
     }
 
@@ -1662,5 +1988,10 @@ namespace TGE::Internal
         WindowId id)
     {
         return state->DestroyWindowAsync(id);
+    }
+
+    Task<void> WindowManager::ShutdownAsync()
+    {
+        return state->ShutdownAsync();
     }
 }

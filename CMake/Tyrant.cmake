@@ -44,6 +44,7 @@ endfunction()
 #   TGE_MODULE(
 #     <Name>
 #     [REQUIRED]
+#     [INTERNAL_ONLY]         # omit public headers and install include paths
 #     [DEPS dep1 dep2 ...]
 #     [INCLUDE_DIR <path>]    # public headers root (default: Runtime/Modules/<Name>/Public)
 #     [PRIVATE_INCLUDE_DIR <path>] # private headers root (default: Runtime/Modules/<Name>/Private/include)
@@ -53,7 +54,7 @@ endfunction()
 #     [PRIVATE_DEFINES ...]   # extra private defines
 #   )
 function(TGE_MODULE name)
-    set(options REQUIRED)
+    set(options REQUIRED INTERNAL_ONLY)
     set(oneValueArgs INCLUDE_DIR PRIVATE_INCLUDE_DIR SOURCE_DIR)
     set(multiValueArgs DEPS SOURCES PUBLIC_DEFINES PRIVATE_DEFINES)
     cmake_parse_arguments(TGE_MOD "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
@@ -62,7 +63,12 @@ function(TGE_MODULE name)
         message(FATAL_ERROR "TGE_MODULE: missing module name")
     endif()
 
-    if(NOT TGE_MOD_INCLUDE_DIR)
+    if(TGE_MOD_INTERNAL_ONLY AND TGE_MOD_INCLUDE_DIR)
+        message(FATAL_ERROR
+            "TGE_MODULE ${name}: INTERNAL_ONLY modules cannot declare INCLUDE_DIR")
+    endif()
+
+    if(NOT TGE_MOD_INTERNAL_ONLY AND NOT TGE_MOD_INCLUDE_DIR)
         set(TGE_MOD_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Modules/${name}/Public")
     endif()
     if(NOT TGE_MOD_PRIVATE_INCLUDE_DIR)
@@ -98,12 +104,16 @@ function(TGE_MODULE name)
         return()
     endif()
 
-    # Register this module's public include root for later install
-    if(EXISTS "${TGE_MOD_INCLUDE_DIR}")
-        # Append to global property (dedup will happen at install time)
-        set_property(GLOBAL APPEND PROPERTY TGE_PUBLIC_INCLUDE_DIRS "${TGE_MOD_INCLUDE_DIR}")
-    else()
-        message(WARNING "TGE_MODULE ${name}: include dir not found: ${TGE_MOD_INCLUDE_DIR}")
+    # Register public headers only for modules that intentionally expose them.
+    # Internal adapters remain build-tree implementation details and install no
+    # include path of their own.
+    if(NOT TGE_MOD_INTERNAL_ONLY)
+        if(EXISTS "${TGE_MOD_INCLUDE_DIR}")
+            # Append to global property (dedup will happen at install time)
+            set_property(GLOBAL APPEND PROPERTY TGE_PUBLIC_INCLUDE_DIRS "${TGE_MOD_INCLUDE_DIR}")
+        else()
+            message(WARNING "TGE_MODULE ${name}: include dir not found: ${TGE_MOD_INCLUDE_DIR}")
+        endif()
     endif()
 
     set(_srcs "${TGE_MOD_SOURCES}")
@@ -125,10 +135,12 @@ function(TGE_MODULE name)
         target_compile_options(${_obj_target} PRIVATE -fvisibility=hidden)
     endif()
     set_property(TARGET ${_obj_target} PROPERTY POSITION_INDEPENDENT_CODE ON)
-    target_include_directories(${_obj_target}
-        PUBLIC
-            $<BUILD_INTERFACE:${TGE_MOD_INCLUDE_DIR}>
-            $<INSTALL_INTERFACE:include>)
+    if(NOT TGE_MOD_INTERNAL_ONLY)
+        target_include_directories(${_obj_target}
+            PUBLIC
+                $<BUILD_INTERFACE:${TGE_MOD_INCLUDE_DIR}>
+                $<INSTALL_INTERFACE:include>)
+    endif()
 
     if(TGE_MOD_PRIVATE_INCLUDE_DIR AND EXISTS "${TGE_MOD_PRIVATE_INCLUDE_DIR}")
         target_include_directories(${_obj_target} PRIVATE "${TGE_MOD_PRIVATE_INCLUDE_DIR}")
