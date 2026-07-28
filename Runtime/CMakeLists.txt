@@ -7,6 +7,29 @@ cmake_minimum_required(VERSION 3.30)
 # Register modules
 # Core module lives at Runtime/Modules/Core/{Public,Private}
 TGE_MODULE(Core REQUIRED)
+
+# Resolve this optional stack before its dependency-first target registration.
+# TGE_MODULE is intentionally one-pass, so a later dependent cannot revive a
+# dependency target that was already skipped.
+TGE_DEFINE_BOOL(TGE_MODULE_RENDERING ON "Build module Rendering")
+TGE_DEFINE_BOOL(TGE_MODULE_DRAWING2D ON "Build module Drawing2D")
+TGE_DEFINE_BOOL(TGE_MODULE_WORLD2D ON "Build module World2D")
+if(TGE_MODULE_WORLD2D)
+    set(
+        TGE_MODULE_DRAWING2D
+        ON
+        CACHE BOOL "Build module Drawing2D" FORCE)
+endif()
+if(TGE_MODULE_DRAWING2D)
+    set(
+        TGE_MODULE_RENDERING
+        ON
+        CACHE BOOL "Build module Rendering" FORCE)
+endif()
+
+TGE_MODULE(Rendering DEPS Core)
+TGE_MODULE(Drawing2D DEPS Core Rendering)
+TGE_MODULE(World2D DEPS Core Drawing2D)
 TGE_MODULE(Application REQUIRED DEPS Core)
 TGE_MODULE(CliApplication REQUIRED DEPS Application)
 

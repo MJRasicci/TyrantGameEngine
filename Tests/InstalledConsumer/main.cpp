@@ -5,6 +5,16 @@
 #include <TGE/GuiApplication.hpp>
 #include <TGE/Input.hpp>
 
+#if TGE_INSTALLED_HAS_RENDERING
+    #include <TGE/Rendering.hpp>
+#endif
+#if TGE_INSTALLED_HAS_DRAWING2D
+    #include <TGE/Drawing2D.hpp>
+#endif
+#if TGE_INSTALLED_HAS_WORLD2D
+    #include <TGE/World2D.hpp>
+#endif
+
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -134,6 +144,44 @@ int main()
     {
         return 8;
     }
+
+#if TGE_INSTALLED_HAS_RENDERING
+    auto image = TGE::Image::Create(
+        { 2, 2 },
+        TGE::PixelFormat::Rgba8Srgb);
+    if (!image ||
+        !image->Fill(TGE::Srgba8 { 255, 128, 0, 255 }))
+    {
+        return 9;
+    }
+#endif
+
+#if TGE_INSTALLED_HAS_DRAWING2D
+    const TGE::Transform2D drawingTransform {
+        .translation = { 3.0F, 4.0F }
+    };
+    if (drawingTransform.Matrix().TransformPoint({}) !=
+        TGE::Vector2f { 3.0F, 4.0F })
+    {
+        return 10;
+    }
+#endif
+
+#if TGE_INSTALLED_HAS_WORLD2D
+    TGE::World2D world;
+    const auto node = world.CreateNode();
+    if (!node)
+    {
+        return 11;
+    }
+    auto visual = world.AddRectangle(
+        *node,
+        TGE::Rectangle2D { .size = { 16.0F, 12.0F } });
+    if (!visual || world.PublishRenderScene().Items().size() != 1)
+    {
+        return 12;
+    }
+#endif
 
     return 0;
 }

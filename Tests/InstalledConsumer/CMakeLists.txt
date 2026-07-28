@@ -7,6 +7,12 @@ find_package(TyrantGameEngine CONFIG REQUIRED)
 
 add_executable(tge_installed_consumer main.cpp)
 target_link_libraries(tge_installed_consumer PRIVATE TGE::runtime)
+target_compile_definitions(
+    tge_installed_consumer
+    PRIVATE
+        TGE_INSTALLED_HAS_RENDERING=$<BOOL:${TGE_INSTALLED_HAS_RENDERING}>
+        TGE_INSTALLED_HAS_DRAWING2D=$<BOOL:${TGE_INSTALLED_HAS_DRAWING2D}>
+        TGE_INSTALLED_HAS_WORLD2D=$<BOOL:${TGE_INSTALLED_HAS_WORLD2D}>)
 
 enable_testing()
 add_test(NAME InstalledConsumer.Runs COMMAND tge_installed_consumer)
